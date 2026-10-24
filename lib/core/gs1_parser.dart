@@ -4,7 +4,9 @@ String? extractGtin(String? raw) {
   if (raw == null || raw.isEmpty) return null;
   final value = raw.startsWith(']d2') ? raw.substring(3) : raw;
 
-  final labelled = RegExp(r'\(01\)(\d{14})').firstMatch(value);
+  // (?!\d): 14 haneden sonra fazladan rakam varsa (bozuk/kazınmış kod) sessizce
+  // ilk 14 haneyi alıp yanlış bir GTIN üretmeyelim.
+  final labelled = RegExp(r'\(01\)(\d{14})(?!\d)').firstMatch(value);
   if (labelled != null) {
     final gtin = labelled.group(1)!;
     return isValidGtin14(gtin) ? gtin : null;

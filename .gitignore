@@ -20,3 +20,6 @@ android/key.properties
 ios/Pods/
 ios/Flutter/Generated.xcconfig
 ios/Flutter/flutter_export_environment.sh
+
+# FVM Version Cache
+.fvm/

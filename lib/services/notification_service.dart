@@ -19,11 +19,21 @@ class NotificationService {
     _initialized = true;
   }
 
-  Future<void> showTestNotification() async {
+  /// İzin verilmişse (veya platformda gerekmiyorsa) bildirimi gösterir ve `true` döner.
+  /// Kullanıcı izni reddettiyse bildirim göstermeden `false` döner — çağıran taraf
+  /// bunu kullanıcıya açıkça bildirmelidir, "gönderildi" gibi yanıltıcı mesaj vermemelidir.
+  Future<bool> showTestNotification() async {
     await _prepare();
-    await _plugin
+
+    final androidGranted = await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
+    if (androidGranted == false) return false;
+
+    final iosGranted = await _plugin
+        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+    if (iosGranted == false) return false;
 
     await _plugin.show(
       id: 101,
@@ -40,5 +50,6 @@ class NotificationService {
         iOS: DarwinNotificationDetails(),
       ),
     );
+    return true;
   }
 }

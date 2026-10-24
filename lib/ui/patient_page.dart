@@ -31,10 +31,14 @@ class _PatientPageState extends State<PatientPage> {
   Future<void> _testNotification() async {
     setState(() => sending = true);
     try {
-      await NotificationService.instance.showTestNotification();
+      final granted = await NotificationService.instance.showTestNotification();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Deneme bildirimi istendi. Telefon bildirim izinlerini kontrol edin.')),
+        SnackBar(
+          content: Text(granted
+              ? 'Deneme bildirimi gönderildi.'
+              : 'Bildirim izni verilmedi, bildirim gösterilemedi. Telefon ayarlarından izni açın.'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;

@@ -14,4 +14,7 @@ void main() {
   test('Belirsiz barkod güvenilir GTIN olarak kabul edilmez', () {
     expect(extractGtin('rastgele-veri'), isNull);
   });
+  test('14 haneden fazla rakam içeren bozuk kod sessizce kabul edilmez', () {
+    expect(extractGtin('(01)012345678901284(17)260101'), isNull);
+  });
 }

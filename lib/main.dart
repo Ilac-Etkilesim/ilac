@@ -9,11 +9,16 @@ Future<void> main() async {
   const publishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
 
   // Demo, Supabase olmadan açılır. Gerçek Auth/veri bağlantısı henüz kurulmadı.
+  // Hatalı/bozuk URL-anahtar verilirse bile DEMO ekranı açılabilsin diye hata yutuluyor.
   if (url.isNotEmpty && publishableKey.isNotEmpty) {
-    await Supabase.initialize(
-      url: url,
-      publishableKey: publishableKey,
-    );
+    try {
+      await Supabase.initialize(
+        url: url,
+        publishableKey: publishableKey,
+      );
+    } catch (e) {
+      debugPrint('Supabase başlatılamadı, DEMO modunda devam ediliyor: $e');
+    }
   }
 
   runApp(const MedicationApp());
