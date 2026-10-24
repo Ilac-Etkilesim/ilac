@@ -1,4 +1,4 @@
-package com.example.ilac_yakinlik_takip
+package com.ilacetkilesim.yakinliktakip
 
 import io.flutter.embedding.android.FlutterActivity
 
