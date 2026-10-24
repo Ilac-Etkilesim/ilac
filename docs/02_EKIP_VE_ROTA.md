@@ -13,8 +13,13 @@
 | Merve | Yerel hatırlatma ve kritik FCM bildirimleri | Eray |
 
 ## Haftalık lider sırası
-Geçen hafta Eray'dı, Sprint 0 Melike:
-Melike → Metehan → Gizem → Ali → Afra → Ahmet → Merve → Eray → Melike (döngü).
+**Güncelleme (Sprint 1 başı):** Hafta 1 (Sprint 0) büyük ölçüde proje tanıtımı/ortam kurulumu olarak geçti
+(repo, dal yapısı, Flutter/Android SDK kurulumu, native iskelet) — henüz gerçek bir "geliştirme
+sprinti" kabul edilmiyor. Bu nedenle **Melike, Sprint 0'ın devamı olarak Sprint 1'i de yönetir**
+(proje kemiğinin oluşturulduğu ilk gerçek sprint). Rotasyon **Sprint 2'den itibaren Metehan ile
+normal sırasında devam eder.**
+
+Güncel sıra: **Melike (Sprint 0 + Sprint 1) → Metehan (Sprint 2) → Gizem → Ali → Afra → Ahmet → Merve → Eray → Melike (döngü)**.
 
 Liderin işi: planlama, engellerin giderilmesi, PR süreç onayı, haftalık rapor, yeni lidere devir.
 Lider teknik geliştirme üstlenmez. Teknik PR incelemesini konu sahibi bir başka üye yapar.
