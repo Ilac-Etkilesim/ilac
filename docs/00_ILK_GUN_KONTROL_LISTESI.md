@@ -5,6 +5,7 @@
 - [ ] 7 Sprint 0 görevi Issue olarak açıldı.
 - [ ] Her görev için reviewer ve 2,5 saatlik sınır yazıldı.
 - [ ] Flutter 3.38.1+ ve Android telefon kurulumu tamamlandı.
+- [ ] Herkes kendi makinesine `fvm` kurdu (Windows/Mac/Linux fark etmez) ve repo kökünde `fvm install` + `fvm use` çalıştırdı — proje `.fvmrc` ile Flutter 3.38.1'e sabitlenmiştir, bu adım atlanırsa kişi kendi global Flutter sürümünü kullanır ve "bende farklı davranıyor" sorunları çıkabilir. Android SDK kurulumu (Android Studio üzerinden) ise git'e dahil değildir, her makinede ayrıca yapılmalıdır.
 - [ ] Afra ve Gizem Flutter/Android testinde eşgüdümlü ilerliyor.
 - [ ] Merve bildirim izinleri ve deneme bildirimi testini yapıyor.
 - [ ] Metehan SQL taslağını incelemeden canlı Supabase projesine uygulamadı.
