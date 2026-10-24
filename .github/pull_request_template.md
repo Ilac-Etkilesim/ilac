@@ -13,6 +13,7 @@ Closes #
 ## Güvenlik ve tıbbi doğruluk
 - [ ] Gerçek sağlık verisi veya gizli sunucu anahtarı eklenmedi
 - [ ] Demo işlevi çalışan gerçek klinik özellik gibi sunulmadı
+- [ ] Ekrana/çıktıya eklenen yeni demo veriler "DEMO"/temsili olarak etiketlendi
 
 ## Teknik reviewer
 ## Haftalık lider süreç onayı

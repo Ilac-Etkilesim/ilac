@@ -37,7 +37,10 @@ create index if not exists patient_medications_patient_idx
 create table if not exists public.dose_events (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references public.profiles(id) on delete cascade,
-  patient_medication_id uuid not null references public.patient_medications(id) on delete cascade,
+  -- restrict (cascade değil): bir ilaç kaydı silinirse geçmiş doz onayları
+  -- (yakının gördüğü uyum geçmişi) kaybolmasın; hasta tarafı ilacı "pasif"
+  -- yapar (patient_medications.active = false), sert silme yapılmaz.
+  patient_medication_id uuid not null references public.patient_medications(id) on delete restrict,
   scheduled_date date not null,
   status text not null check (status in ('taken', 'skipped')),
   confirmed_at timestamptz not null default now(),
@@ -89,9 +92,11 @@ create table if not exists public.interaction_rules (
   verified_on date,
   is_verified boolean not null default false,
   is_demo boolean not null default true,
-  check (ingredient_a_id <> ingredient_b_id)
+  -- Kanonik sıralama: (A,B) ve (B,A) aynı çift için iki ayrı/çelişkili satır
+  -- eklenmesini engeller. check_drug_risk() zaten her iki yönü de sorguluyor.
+  check (ingredient_a_id < ingredient_b_id)
 );
-create index if not exists rules_pair_idx
+create unique index if not exists rules_pair_unique_idx
   on public.interaction_rules(ingredient_a_id, ingredient_b_id);
 
 create table if not exists public.alerts (
@@ -150,8 +155,8 @@ create policy patient_medications_insert_own on public.patient_medications
 create policy patient_medications_update_own on public.patient_medications
   for update to authenticated using (patient_id = auth.uid())
   with check (patient_id = auth.uid());
-create policy patient_medications_delete_own on public.patient_medications
-  for delete to authenticated using (patient_id = auth.uid());
+-- Sert silme politikası yok: hasta bir ilacı bırakırsa `active=false` yapar
+-- (patient_medications_update_own zaten bunu kapsıyor), dose_events geçmişi kalıcı kalır.
 
 create policy dose_events_read on public.dose_events
   for select to authenticated using (public.can_view_patient(patient_id));
@@ -178,7 +183,7 @@ revoke all on public.profiles, public.ingredients, public.products,
 
 grant select, insert, update on public.profiles to authenticated;
 grant select on public.ingredients, public.products to authenticated;
-grant select, insert, update, delete on public.patient_medications to authenticated;
+grant select, insert, update on public.patient_medications to authenticated;
 grant select, insert, update on public.dose_events to authenticated;
 grant select on public.caregiver_links, public.alerts to authenticated;
 
