@@ -1,0 +1,22 @@
+name: ilac_yakinlik_takip
+description: "İlaç Kullanım ve Yakınlık Takip Sistemi - Sprint 0 teknik prototipi"
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  mobile_scanner: ^7.4.2
+  supabase_flutter: ^2.18.3
+  flutter_local_notifications: ^22.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
