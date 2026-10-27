@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/dose_storage.dart';
 import '../services/notification_service.dart';
 import 'medication_app.dart';
 
@@ -20,13 +21,39 @@ class PatientPage extends StatefulWidget {
 }
 
 class _PatientPageState extends State<PatientPage> {
+  final DoseStorage _doseStorage = const DoseStorage();
+  bool _loading = true;
+
   final doses = [
-    DemoDose(1, 'Örnek İlaç A', '1 tablet · demo', '08:00', 'Sabah', taken: true),
+    DemoDose(1, 'Örnek İlaç A', '1 tablet · demo', '08:00', 'Sabah'),
     DemoDose(2, 'Örnek İlaç B', '1 tablet · demo', '09:00', 'Sabah'),
     DemoDose(3, 'Örnek İlaç C', '1 tablet · demo', '13:00', 'Öğle'),
     DemoDose(4, 'Örnek İlaç A', '1 tablet · demo', '20:00', 'Akşam'),
   ];
   bool sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDoses();
+  }
+
+  Future<void> _loadDoses() async {
+    final takenIds = await _doseStorage.loadTaken(DateTime.now());
+    if (!mounted) return;
+    setState(() {
+      for (final dose in doses) {
+        dose.taken = takenIds.contains(dose.id);
+      }
+      _loading = false;
+    });
+  }
+
+  Future<void> _toggleDose(DemoDose dose) async {
+    setState(() => dose.taken = !dose.taken);
+    final takenIds = doses.where((d) => d.taken).map((d) => d.id).toSet();
+    await _doseStorage.saveTaken(DateTime.now(), takenIds);
+  }
 
   Future<void> _testNotification() async {
     setState(() => sending = true);
@@ -61,6 +88,13 @@ class _PatientPageState extends State<PatientPage> {
         const Text('Aşağıdaki kayıtlar örnektir, gerçek hasta verisi değildir.',
             style: TextStyle(color: Color(0xFF526783), fontSize: 15)),
         const SizedBox(height: 18),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: Text('Yükleniyor...', style: TextStyle(color: Color(0xFF526783))),
+            ),
+          ),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -111,7 +145,7 @@ class _PatientPageState extends State<PatientPage> {
                       SizedBox(
                         height: 50,
                         child: FilledButton.tonal(
-                          onPressed: () => setState(() => dose.taken = !dose.taken),
+                          onPressed: () => _toggleDose(dose),
                           child: Text(dose.taken ? 'Geri al' : 'İçtim'),
                         ),
                       ),
@@ -129,7 +163,7 @@ class _PatientPageState extends State<PatientPage> {
           label: const Text('Telefonuma deneme bildirimi gönder'),
         ),
         const SizedBox(height: 12),
-        const Text('Not: Doz onayları yalnızca bellekte tutulur, kalıcı kayıt ve yakına bildirim yoktur.',
+        const Text('Not: Doz onayları yalnızca bu cihazda tutulur, gerçek kayıt/senkronizasyon ve yakına bildirim yoktur.',
             style: TextStyle(color: Color(0xFF526783), fontSize: 13)),
       ],
     );
