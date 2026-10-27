@@ -5,3 +5,7 @@ gtin,product_name,ingredient_label,is_demo
 99990000000039,Örnek Ürün D,DEMO_ETKEN_D,true
 99990000000046,Örnek Ürün E,DEMO_ETKEN_E,true
 99990000000053,Örnek Ürün F,DEMO_ETKEN_F,true
+99990000000060,Örnek Ürün G,DEMO_ETKEN_G,true
+99990000000077,Örnek Ürün H,DEMO_ETKEN_H,true
+99990000000084,Örnek Ürün I,DEMO_ETKEN_A,true
+99990000000091,Örnek Ürün J,DEMO_ETKEN_B,true
