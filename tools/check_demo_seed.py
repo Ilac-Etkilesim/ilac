@@ -22,6 +22,10 @@ CSV_PATH = ROOT / "data" / "demo_products.csv"
 SEED_PATH = ROOT / "supabase" / "seed" / "demo_seed.sql"
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 SEVERITIES = {"major", "moderate", "minor"}
+# Beklenen sayılar — seed değişirse burası da güncellenir (bilinçli: sessiz atlama olmasın).
+EXPECTED_INGREDIENTS = 8
+EXPECTED_PRODUCTS = 10
+EXPECTED_RULES = 4
 
 
 def gtin_ok(gtin: str) -> bool:
@@ -48,11 +52,14 @@ def main() -> int:
     sql = SEED_PATH.read_text(encoding="utf-8")
 
     ingredient_ids = set(re.findall(rf"\('({UUID})',\s*'demo_etken_[a-z]+'\)", sql))
-    if len(ingredient_ids) < 8:
-        errors.append(f"SEED: en az 8 etken madde bekleniyordu, {len(ingredient_ids)} bulundu")
+    # Tam eşitlik (Metehan, PR #11): regex'e takılmayan bir satır sessizce atlanmasın.
+    if len(ingredient_ids) != EXPECTED_INGREDIENTS:
+        errors.append(f"SEED: {EXPECTED_INGREDIENTS} etken madde bekleniyordu, {len(ingredient_ids)} bulundu")
 
     products = re.findall(rf"\('(\d{{14}})',\s*'[^']*',\s*'({UUID})',\s*(true|false)", sql)
     seed_gtins = {g for g, _, _ in products}
+    if len(products) != EXPECTED_PRODUCTS:
+        errors.append(f"SEED: {EXPECTED_PRODUCTS} ürün bekleniyordu, {len(products)} bulundu")
     if seed_gtins != csv_gtins:
         errors.append(f"SEED/CSV GTIN kümeleri farklı: sadece seed={sorted(seed_gtins - csv_gtins)} "
                       f"sadece csv={sorted(csv_gtins - seed_gtins)}")
@@ -68,8 +75,8 @@ def main() -> int:
         rf"\('({UUID})',\s*'({UUID})',\s*'(\w+)',\s*'[^']*',\s*'[^']*',\s*(?:null|'[^']*'),\s*(?:null|'[^']*'),\s*(true|false),\s*(true|false)\)",
         sql,
     )
-    if len(rules) < 3:
-        errors.append(f"SEED: en az 3 etkileşim kuralı bekleniyordu, {len(rules)} bulundu")
+    if len(rules) != EXPECTED_RULES:
+        errors.append(f"SEED: {EXPECTED_RULES} etkileşim kuralı bekleniyordu, {len(rules)} bulundu")
     seen_pairs: set[tuple[str, str]] = set()
     for a, b, sev, verified, is_demo in rules:
         if a not in ingredient_ids or b not in ingredient_ids:

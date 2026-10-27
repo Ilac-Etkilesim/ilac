@@ -26,7 +26,7 @@ insert into public.ingredients (id, normalized_name) values
   ('a0000000-0000-4000-8000-000000000006', 'demo_etken_f'),
   ('a0000000-0000-4000-8000-000000000007', 'demo_etken_g'),
   ('a0000000-0000-4000-8000-000000000008', 'demo_etken_h')
-on conflict (id) do nothing;
+on conflict do nothing; -- hedefsiz: id VEYA normalized_name çakışırsa seed tümden geri alınmasın (Metehan, PR #11)
 
 -- 10 kurgusal ürün (GTIN-14 kontrol basamakları geçerli; tools/check_demo_seed.py doğrular)
 -- Ürün I ve J, A ve B ile aynı etken maddeyi taşır: "farklı marka, aynı etken madde" senaryosu.
