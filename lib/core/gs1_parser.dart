@@ -19,6 +19,19 @@ String? extractGtin(String? raw) {
   return null;
 }
 
+/// Elle girilen GTIN'i normalize eder (Issue #7, Öncelik B).
+///
+/// Boşluk ve tireleri temizler; tam 14 rakam değilse veya kontrol basamağı
+/// tutmuyorsa `null` döner. Geçerliyse `'(01)' + gtin` döner ki [extractGtin]
+/// onu kamera çıktısıyla aynı yoldan okusun. Elle giriş "doğrulanmış ilaç"
+/// anlamına gelmez; yalnızca katalog eşleştirme denemesi içindir.
+String? normalizeManualGtin(String input) {
+  final cleaned = input.replaceAll(RegExp(r'[\s\-]'), '');
+  if (!RegExp(r'^\d{14}$').hasMatch(cleaned)) return null;
+  if (!isValidGtin14(cleaned)) return null;
+  return '(01)$cleaned';
+}
+
 /// GTIN-14 kontrol rakamı denetimi (GS1). Ürün kataloğunda kayıt olduğunu kanıtlamaz.
 bool isValidGtin14(String value) {
   if (!RegExp(r'^\d{14}$').hasMatch(value)) return false;

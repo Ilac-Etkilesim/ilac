@@ -17,4 +17,23 @@ void main() {
   test('14 haneden fazla rakam içeren bozuk kod sessizce kabul edilmez', () {
     expect(extractGtin('(01)012345678901284(17)260101'), isNull);
   });
+
+  group('normalizeManualGtin (elle giriş)', () {
+    test('geçerli 14 hane (01) önekiyle döner ve extractGtin onu okur', () {
+      final r = normalizeManualGtin('01234567890128');
+      expect(r, '(01)01234567890128');
+      expect(extractGtin(r), '01234567890128');
+    });
+    test('boşluk ve tireler temizlenir', () {
+      expect(normalizeManualGtin('0123 4567-8901 28'), '(01)01234567890128');
+    });
+    test('yanlış kontrol basamağı reddedilir', () {
+      expect(normalizeManualGtin('01234567890129'), isNull);
+    });
+    test('14 haneden kısa/uzun veya harf içeren giriş reddedilir', () {
+      expect(normalizeManualGtin('0123456789012'), isNull);
+      expect(normalizeManualGtin('012345678901280'), isNull);
+      expect(normalizeManualGtin('0123456789012a'), isNull);
+    });
+  });
 }
