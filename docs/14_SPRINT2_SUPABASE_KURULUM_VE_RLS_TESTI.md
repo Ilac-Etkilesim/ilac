@@ -48,21 +48,25 @@ Gerçek Supabase açılmadan önce, betikler yerelde **PGlite** (Node'da çalı�
 | `rls_scenarios.sql` | **Tüm senaryolar geçti**; rollback sonrası test kullanıcısı kalmadı |
 | Negatif kontrol: 002 olmadan senaryolar | Beklendiği gibi **başarısız** (`#15 BAŞARISIZ: product_gtin güncellenebildi`) — testler gerçekten hata yakalıyor |
 
-Bu, Supabase'in birebir aynısı değildir; canlı doğrulama (aşağıdaki tablo) yine de gereklidir.
+Bu, Supabase'in birebir aynısı değildir; bu yüzden ardından canlı doğrulama da yapıldı (aşağıdaki tablo).
 
-## Canlı doğrulama sonuçları (doldurulacak)
+## Canlı doğrulama sonuçları (2 Kasım 2026, dev Supabase projesi — Metehan)
+
+`rls_scenarios.sql` SQL Editor'de tek seferde çalıştırıldı; çıktı: **`TÜM SENARYOLAR GEÇTİ`** (ekran görüntüsü Issue #5'te).
+Betik ilk başarısız kontrolde hata vererek durduğu için bu çıktı, aşağıdaki tüm kontrollerin geçtiğini gösterir.
 
 | Senaryo | Beklenen | Sonuç | Not |
 |---|---|---|---|
-| 001 + 002 hatasız uygulandı | Geçer | | |
-| 1 — Hasta kendi verisini görüyor, başkasınınkini görmüyor | Geçer | | |
-| #15 — `product_gtin` güncellenemiyor, `dose_label` güncellenebiliyor | Geçer | | |
-| #16 — Dünün dozu değişmiyor, bugünkü değişiyor, `updated_at` doluyor | Geçer | | |
-| #17/#23 — `check_drug_risk` 8 durumu doğru döndürüyor | Geçer | | |
-| 2 — Aktif yakın okuyor, yazamıyor | Geçer | | |
-| 3 — Revoked/pending yakın hasta verisini göremiyor | Geçer | | |
-| 4 — Katalog salt okunur, kurallar kapalı, anon fonksiyonu çağıramıyor | Geçer | | |
-| `service_role` hiçbir yerde paylaşılmadı | Evet | | |
+| 001 + 002 hatasız uygulandı | Geçer | Geçti | SQL Editor, sırayla |
+| 1 — Hasta kendi verisini görüyor, başkasınınkini görmüyor | Geçer | Geçti | 1a–1d |
+| #15 — `product_gtin` güncellenemiyor, `dose_label` güncellenebiliyor | Geçer | Geçti | |
+| #16 — Dünün dozu değişmiyor, bugünkü değişiyor, `updated_at` doluyor | Geçer | Geçti | `scheduled_date` de değiştirilemiyor |
+| #17/#23 — `check_drug_risk` 8 durumu doğru döndürüyor | Geçer | Geçti | risk_found, same_ingredient, kombine ürün, needs_review, demo_only, product_not_found |
+| 2 — Aktif yakın okuyor, yazamıyor | Geçer | Geçti | 2a–2d |
+| 3 — Revoked/pending yakın hasta verisini göremiyor | Geçer | Geçti | 3a–3f |
+| 4 — Katalog salt okunur, kurallar kapalı, anon fonksiyonu çağıramıyor | Geçer | Geçti | 4a–4d |
+| Test verisi geri alındı (rollback) | Evet | Evet | Betik sonunda `rollback` |
+| `service_role` hiçbir yerde paylaşılmadı | Evet | Evet | Yalnızca publishable key kullanılacak |
 
 ## Açık konular
 
