@@ -42,6 +42,11 @@ insert into public.ingredients (id, normalized_name, display_name) values
   ('b0000000-0000-4000-8000-000000000003', 'test_etken_z', 'TEST Etken Z');
 insert into public.ingredients (id, normalized_name, needs_review, review_reason) values
   ('b0000000-0000-4000-8000-000000000004', 'test_etken_q', true, 'TEST: ad eşlemesi şüpheli');
+-- İzole bir etken madde: yalnızca #16 insert testindeki "ikinci A ilacı" için.
+-- Hiçbir interaction_rules veya check_drug_risk tarama senaryosunda kullanılmıyor
+-- ki 1a/2a dışındaki hiçbir assert'i (same_ingredient dahil) etkilemesin.
+insert into public.ingredients (id, normalized_name) values
+  ('b0000000-0000-4000-8000-000000000005', 'test_etken_slot');
 
 insert into public.products (gtin, display_name, is_demo, data_source) values
   ('99980000000009', 'TEST Ürün X (listede)',        false, 'TEST'),
@@ -51,7 +56,8 @@ insert into public.products (gtin, display_name, is_demo, data_source) values
   ('99980000000047', 'TEST Ürün Z (kural yok)',      false, 'TEST'),
   ('99980000000054', 'TEST Ürün Q (inceleme gerek)', false, 'TEST'),
   ('99980000000061', 'TEST Ürün (etken maddesiz)',   false, 'TEST'),
-  ('99980000000078', 'TEST DEMO ürün',               true,  'TEST');
+  ('99980000000078', 'TEST DEMO ürün',               true,  'TEST'),
+  ('99980000001006', 'TEST Ürün Slot (A ikinci ilaç)', false, 'TEST');
 
 insert into public.product_ingredients (product_gtin, ingredient_id) values
   ('99980000000009', 'b0000000-0000-4000-8000-000000000001'),
@@ -61,7 +67,8 @@ insert into public.product_ingredients (product_gtin, ingredient_id) values
   ('99980000000030', 'b0000000-0000-4000-8000-000000000002'),
   ('99980000000047', 'b0000000-0000-4000-8000-000000000003'),
   ('99980000000054', 'b0000000-0000-4000-8000-000000000004'),
-  ('99980000000078', 'b0000000-0000-4000-8000-000000000003');
+  ('99980000000078', 'b0000000-0000-4000-8000-000000000003'),
+  ('99980000001006', 'b0000000-0000-4000-8000-000000000005');
 
 -- Doğrulanmış (is_verified) ve demo olmayan tek kural: X × W = major
 insert into public.interaction_rules
@@ -74,7 +81,11 @@ values
 -- Hasta A: listede Ürün X; B: kendi ilacı
 insert into public.patient_medications (id, patient_id, product_gtin, dose_label, scheduled_time) values
   ('c0000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', '99980000000009', '1 tablet', '08:00'),
-  ('c0000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-0000000000b1', '99980000000047', '1 tablet', '09:00');
+  ('c0000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-0000000000b1', '99980000000047', '1 tablet', '09:00'),
+  -- İkinci A ilacı: #16 insert testinde bugünün tarihiyle çakışmasız boş bir
+  -- (patient_medication_id, scheduled_date) hücresi lazım; c...0001'in bugünü
+  -- zaten dolu (d0000000-0002). İzole "slot" ürününde (yukarıdaki not).
+  ('c0000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-0000000000a1', '99980000001006', '1 tablet (ek)', '20:00');
 
 -- A'nın dün ve bugün (Türkiye saati) doz onayları
 insert into public.dose_events (id, patient_id, patient_medication_id, scheduled_date, status) values
@@ -95,8 +106,8 @@ select set_config('request.jwt.claims',
   '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 
 do $$ begin
-  assert (select count(*) from public.patient_medications) = 1,
-    '1a: hasta A yalnızca kendi 1 ilacını görmeli';
+  assert (select count(*) from public.patient_medications) = 2,
+    '1a: hasta A yalnızca kendi 2 ilacını görmeli';
   assert (select count(*) from public.dose_events) = 2,
     '1b: hasta A kendi 2 doz kaydını görmeli';
   assert (select count(*) from public.profiles
@@ -148,6 +159,30 @@ do $$ begin
   end;
 end $$;
 
+-- #16 devamı — update kısıtı aşılıp geçmiş bir tarihle YENİ bir kayıt (insert)
+-- açılabiliyor mu? Açılmamalı. (3 gün önce: mevcut hiçbir satırla çakışmıyor.)
+do $$ begin
+  begin
+    insert into public.dose_events (patient_id, patient_medication_id, scheduled_date, status)
+    values ('00000000-0000-4000-8000-0000000000a1',
+            'c0000000-0000-4000-8000-000000000001',
+            (now() at time zone 'Europe/Istanbul')::date - 3, 'taken');
+    raise exception '#16 BAŞARISIZ: geçmiş tarihle yeni doz kaydı eklenebildi';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+-- Bugünün tarihiyle insert hâlâ serbest olmalı (ikinci ilaç: c...0004, bugünü boş).
+insert into public.dose_events (patient_id, patient_medication_id, scheduled_date, status)
+values ('00000000-0000-4000-8000-0000000000a1',
+        'c0000000-0000-4000-8000-000000000004',
+        (now() at time zone 'Europe/Istanbul')::date, 'taken');
+do $$ begin
+  assert (select count(*) from public.dose_events
+          where patient_medication_id = 'c0000000-0000-4000-8000-000000000004'
+            and scheduled_date = (now() at time zone 'Europe/Istanbul')::date) = 1,
+    '#16: bugünün tarihiyle yeni doz kaydı eklenebilmeli';
+end $$;
+
 -- #17 + #23: check_drug_risk() sonuçları (hasta A'nın listesinde Ürün X var)
 do $$ declare r jsonb; begin
   r := public.check_drug_risk('99980000000023');            -- W: X ile major
@@ -188,10 +223,10 @@ end $$;
 select set_config('request.jwt.claims',
   '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 do $$ begin
-  assert (select count(*) from public.patient_medications) = 1,
-    '2a: aktif yakın, hasta A''nın ilacını görmeli';
-  assert (select count(*) from public.dose_events) = 2,
-    '2b: aktif yakın, hasta A''nın doz kayıtlarını görmeli';
+  assert (select count(*) from public.patient_medications) = 2,
+    '2a: aktif yakın, hasta A''nın 2 ilacını görmeli';
+  assert (select count(*) from public.dose_events) = 3,
+    '2b: aktif yakın, hasta A''nın 3 doz kaydını görmeli (ikisi başlangıç, biri #16 insert testinden)';
   assert (select count(*) from public.alerts) = 1,
     '2c: aktif yakın yalnızca kendisine gelen uyarıyı görmeli';
 end $$;

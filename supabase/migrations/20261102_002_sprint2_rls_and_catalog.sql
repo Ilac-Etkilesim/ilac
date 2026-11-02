@@ -1,6 +1,7 @@
 -- SPRINT 2 / TASLAK. 20261021_001_initial_draft.sql'den SONRA uygulanır.
 -- Canlı ortamda çalıştırmadan önce Metehan + Eray incelemeli; ekip onayı gerekir.
--- Kapsam: #15 (patient_medications sütun yetkisi), #16 (dose_events aynı gün kuralı),
+-- Kapsam: #15 (patient_medications sütun yetkisi), #16 (dose_events aynı gün kuralı,
+--         hem update hem insert tarafı — Melike incelemesinde insert açığı bulundu),
 --         #23 (gerçek katalog: product_ingredients, atc, needs_review),
 --         #17 (check_drug_risk: same_ingredient + çok etken maddeli ürünler).
 
@@ -51,6 +52,17 @@ create policy dose_events_update_own on public.dose_events
 -- Yalnızca durum değiştirilebilir; tarih, ilaç ve hasta sütunları sabit.
 revoke update on public.dose_events from authenticated;
 grant update (status) on public.dose_events to authenticated;
+
+-- #16 devamı — update kısıtı tek başına yetmiyor: client aynı kısıtı aşıp
+-- geçmiş bir tarih için YENİ bir doz kaydı (insert) açarak sahte geçmiş
+-- oluşturabilirdi. Insert'i de bugüne kısıtlıyoruz, update ile tutarlı.
+drop policy if exists dose_events_write_own on public.dose_events;
+create policy dose_events_write_own on public.dose_events
+  for insert to authenticated
+  with check (
+    patient_id = auth.uid()
+    and scheduled_date = (now() at time zone 'Europe/Istanbul')::date
+  );
 
 -- ---------------------------------------------------------------------------
 -- #23 — Gerçek katalog şeması (Ali'nin TİTCK ETL çıktısıyla uyumlu, PR #22)
