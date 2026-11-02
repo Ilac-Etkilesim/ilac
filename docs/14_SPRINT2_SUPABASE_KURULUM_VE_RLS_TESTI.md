@@ -70,6 +70,7 @@ Betik ilk başarısız kontrolde hata vererek durduğu için bu çıktı, aşağ
 
 ## Açık konular
 
-- `dose_events` için geçmiş tarihli **insert** hâlâ serbest (ör. dünün dozu bugün "taken" olarak eklenebilir). #16 yalnızca güncellemeyi kapsıyor; ayrı karar gerekir.
+- ~~`dose_events` için geçmiş tarihli insert hâlâ serbest~~ — çözüldü (Melike, c1a3981): `dose_events_write_own` artık yalnızca bugünün tarihiyle insert'e izin veriyor, update ile tutarlı.
 - `same_ingredient` ve demo modu: demo ürünler hâlâ erken `demo_only` döner; bu yüzden aynı etken madde uyarısı demo verisiyle gösterilemez (bkz. PR #11 incelemesi, "demo modu").
+- `same_ingredient` ve `needs_review`: Ali'nin incelemesinde bulundu — paylaşılan belirsiz ATC grup kayıtları (needs_review=true) yanlış pozitif same_ingredient üretiyordu; `check_drug_risk()`'e `and not i.needs_review` eklenerek düzeltildi, gerçek veriyle doğrulandı (Tazeracin/Tienam örneği).
 - Arayüz: `same_ingredient` ve `needs_review` durumlarının ekranda gösterimi (Afra/Melike ile).

@@ -91,6 +91,7 @@ create index if not exists product_ingredients_ingredient_idx
   on public.product_ingredients(ingredient_id);
 
 alter table public.product_ingredients enable row level security;
+drop policy if exists product_ingredients_read on public.product_ingredients;
 create policy product_ingredients_read on public.product_ingredients
   for select to authenticated using (true);
 revoke all on public.product_ingredients from anon, authenticated;
@@ -146,6 +147,10 @@ begin
   end if;
 
   -- #17: aynı etken madde hastanın aktif ilaçlarında zaten var mı?
+  -- needs_review kayıtları hariç: TİTCK'de ~400 üründe etken madde yerine
+  -- belirsiz bir ATC grup adı var (ör. "enzyme inhibitor"); bu placeholder'ı
+  -- paylaşan iki FARKLI gerçek ilaç yanlışlıkla "aynı etken madde" sayılmasın
+  -- (Ali'nin PR #25 incelemesi, gerçek veriyle test edildi).
   select i.display_name, i.normalized_name, p.display_name as product_name
   into v_same
   from public.patient_medications pm
@@ -155,6 +160,7 @@ begin
   where pm.patient_id = auth.uid()
     and pm.active and not p.is_demo
     and pi.ingredient_id = any(v_ingredients)
+    and not i.needs_review
   limit 1;
 
   -- Etkileşim: aday ürünün HER etken maddesi × mevcut ilaçların HER etken maddesi
