@@ -5,9 +5,12 @@ Girdi : TİTCK "Ruhsatlı Beşeri Tıbbi Ürünler Listesi" XLSX — https://www
         Dosya adındaki tarih (ör. ...Listesi16.10.2026...) kaynak tarihi olarak kaydedilir.
 Gerek : Yalnızca Python 3. Ek paket gerekmez (XLSX, standart kütüphaneyle okunur).
 Çıktı : data/build/ (Git'e girmez: .gitignore'daki `build/` kuralı)
-  ingredients.csv            id, normalized_name, display_name, atc_codes, needs_review, review_reason, product_count
+  İlk üç dosyanın sütunları 002_sprint2_rls_and_catalog.sql tablolarıyla birebir aynıdır; Supabase
+  Table Editor → Import data ile dönüşümsüz yüklenir (sıra: ingredients → products → product_ingredients).
+  ingredients.csv            id, normalized_name, display_name, atc_codes ({A,B} dizi biçimi), needs_review, review_reason
   products.csv               gtin, display_name, atc_code, license_status, is_demo, data_source
   product_ingredients.csv    product_gtin, ingredient_id
+  review_ingredients.csv     needs_review=true kayıtlar (kategori adı) + kaç üründe geçtiği, elle düzeltilecek
   review_spelling_merges.csv aynı madde sayılıp birleştirilen yazımlar (göz gezdirilecek)
   rejected.csv               barkodu geçersiz/tekrar eden ya da etkin maddesi boş satırlar
   rapor.md                   Issue #2'ye yapıştırılacak özet
@@ -388,28 +391,37 @@ def main() -> int:
 
     links: list[tuple[str, str]] = []
     product_count: Counter = Counter()
+    samples: dict[str, list[str]] = defaultdict(list)
     for p in products:
         for root in dict.fromkeys(uf.find(match_key(k)) for k, _ in p["parts"]):
             links.append((p["gtin"], ids[root]))
             product_count[root] += 1
+            if len(samples[root]) < 2:
+                samples[root].append(p["name"])
 
+    # needs_review yalnızca kaydın kendisi şüpheliyse true: check_drug_risk() bunu kullanıcıya
+    # "inceleme gerekli" olarak yansıtır. ATC'nin olmaması bir şüphe değil (hidroklorotiyazid,
+    # klavulanik asit Türkiye'de yalnız kombinasyonda var); bu bilgi atc_codes = {} ile görülür.
     ing_rows = []
+    review_rows = []
     merges = []
     for root in sorted(spaced, key=lambda r: canon[r]):
-        reasons = []
-        if set(canon[root].split()) & GENERIC_WORDS:
-            reasons.append("kategori adı, madde değil")
-        if not atcs[root]:
-            reasons.append("ATC yok (yalnız kombinasyonda ya da grup kodlu üründe geçiyor): kural adla eşlenmeli")
-        ing_rows.append([ids[root], canon[root], most_common(displays[root]), ";".join(sorted(atcs[root])),
-                         "true" if reasons else "false", "; ".join(reasons), product_count[root]])
+        reason = "kategori adı, madde değil" if set(canon[root].split()) & GENERIC_WORDS else ""
+        # PostgreSQL dizi biçimi: Supabase CSV içe aktarımı text[] sütununa doğrudan yükler.
+        atc_literal = "{" + ",".join(sorted(atcs[root])) + "}"
+        ing_rows.append([ids[root], canon[root], most_common(displays[root]), atc_literal,
+                         "true" if reason else "false", reason])
+        if reason:
+            review_rows.append([canon[root], reason, product_count[root], " | ".join(samples[root])])
         if len(spaced[root]) > 1:
-            merges.append([canon[root], " | ".join(sorted(spaced[root])), ";".join(sorted(atcs[root]))])
+            merges.append([canon[root], " | ".join(sorted(spaced[root])), atc_literal])
 
-    # 4) Yaz
+    # 4) Yaz — sütunlar 002_sprint2_rls_and_catalog.sql tablolarıyla birebir aynı (dönüşümsüz yükleme)
     write_csv(args.out / "ingredients.csv",
-              ["id", "normalized_name", "display_name", "atc_codes", "needs_review", "review_reason", "product_count"],
+              ["id", "normalized_name", "display_name", "atc_codes", "needs_review", "review_reason"],
               ing_rows)
+    write_csv(args.out / "review_ingredients.csv",
+              ["normalized_name", "review_reason", "product_count", "sample_products"], review_rows)
     write_csv(args.out / "products.csv",
               ["gtin", "display_name", "atc_code", "license_status", "is_demo", "data_source"],
               [[p["gtin"], p["name"], p["atc"], p["status"], "false", data_source] for p in products])
@@ -437,8 +449,7 @@ def main() -> int:
 
     per_product = Counter(g for g, _ in links)
     status = Counter(p["status"] for p in products)
-    reasons = Counter(r[5] for r in ing_rows if r[5])
-    no_atc = sum(1 for r in ing_rows if not r[3])
+    no_atc = sum(1 for r in ing_rows if r[3] == "{}")
     lines = [
         f"# Gerçek katalog ETL raporu ({date.today().isoformat()})",
         "",
@@ -458,20 +469,21 @@ def main() -> int:
         f"| Yazım farkı birleştirilen madde | {len(merges)} |",
         f"| Ürün–etken madde bağlantısı | {len(links)} |",
         "",
-        "## Şemaya yüklemeden önce gereken migration",
+        "## Supabase'e yükleme",
         "",
-        "1. `product_ingredients(product_gtin text references products(gtin), ingredient_id uuid references ingredients(id), primary key (product_gtin, ingredient_id))`; RLS açık, `authenticated` için yalnızca `select`.",
-        "2. `products.ingredient_id` kaldırılmalı ya da `null` olabilmeli (kombine ürünler tek sütuna sığmıyor); `products.atc_code text` ve `products.license_status text` eklenmeli.",
-        "3. `ingredients`: `display_name text`, `atc_codes text[]`, `needs_review boolean`, `review_reason text` eklenmeli. `normalized_name` üzerindeki `unique` kalıyor.",
-        "4. `check_drug_risk()` ürünlerin tüm etken maddelerini `product_ingredients` üzerinden karşılaştırmalı.",
+        "Şema: `supabase/migrations/20261102_002_sprint2_rls_and_catalog.sql` (PR #25). CSV sütunları"
+        " tablolarla birebir aynıdır; `atc_codes` PostgreSQL dizi biçimindedir (`{M01AE01,M02AA13}`, boşsa `{}`)."
+        " Bu yüzden Table Editor → Import data ile dönüşümsüz yüklenir.",
+        "",
+        f"`needs_review = true` yalnızca kaydın kendisi şüpheliyse (kategori adı) işaretlenir:"
+        f" {len(review_rows)} kayıt, liste `review_ingredients.csv`'de.",
         "",
         "Etkileşim kuralı eşlemesi: INN → ATC kodu → `atc_codes` alanında o kodu taşıyan etken madde(ler)."
         " ATC'si olmayan maddeler (ör. klavulanik asit, hidroklorotiyazid: Türkiye'de yalnız kombinasyonda"
         " geçiyor) adla eşlenir. Etken madde id'si `uuid5(NAMESPACE, 'name:' + match_key(normalized_name))`"
         " (bkz. `tools/build_catalog.py`).",
         "",
-        "Yükleme sırası: `ingredients.csv` → `products.csv` → `product_ingredients.csv`"
-        " (`atc_codes` `;` ile ayrılmıştır, `text[]`'e çevrilerek yüklenir).",
+        "Yükleme sırası: `ingredients.csv` → `products.csv` → `product_ingredients.csv`.",
         "",
         "## Bilinen sınırlar",
         "",
