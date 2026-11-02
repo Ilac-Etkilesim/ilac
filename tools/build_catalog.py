@@ -3,7 +3,7 @@ Gerçek ürün kataloğu ETL'i: TİTCK Ruhsatlı Beşeri Tıbbi Ürünler Listes
 
 Girdi : TİTCK "Ruhsatlı Beşeri Tıbbi Ürünler Listesi" XLSX — https://www.titck.gov.tr/dinamikmodul/85
         Dosya adındaki tarih (ör. ...Listesi16.10.2026...) kaynak tarihi olarak kaydedilir.
-Gerek : pip install openpyxl
+Gerek : Yalnızca Python 3. Ek paket gerekmez (XLSX, standart kütüphaneyle okunur).
 Çıktı : data/build/ (Git'e girmez: .gitignore'daki `build/` kuralı)
   ingredients.csv            id, normalized_name, display_name, atc_codes, needs_review, review_reason, product_count
   products.csv               gtin, display_name, atc_code, license_status, is_demo, data_source
@@ -49,7 +49,10 @@ import difflib
 import re
 import sys
 import uuid
+import xml.etree.ElementTree as ET
+import zipfile
 from collections import Counter, defaultdict
+from decimal import Decimal, InvalidOperation
 from datetime import date
 from pathlib import Path
 
@@ -190,14 +193,84 @@ def most_common(counter: Counter):
     return sorted(counter.items(), key=lambda kv: (-kv[1], str(kv[0])))[0][0]
 
 
+XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+DOC_REL_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+PKG_REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def _col_index(ref: str) -> int | None:
+    letters = re.match(r"[A-Z]+", ref or "")
+    if not letters:
+        return None
+    n = 0
+    for ch in letters.group(0):
+        n = n * 26 + (ord(ch) - 64)
+    return n - 1
+
+
+def _cell_value(cell: ET.Element, shared: list[str]) -> str | None:
+    kind = cell.get("t")
+    if kind == "inlineStr":
+        return "".join(t.text or "" for t in cell.iter(XLSX_NS + "t"))
+    v = cell.find(XLSX_NS + "v")
+    if v is None or v.text is None:
+        return None
+    if kind == "s":
+        return shared[int(v.text)]
+    if kind in ("str", "e", "b"):
+        return v.text
+    try:  # sayı: 8699508010752 ya da 8.699508010752E+12 -> tam sayı yazımı
+        num = Decimal(v.text)
+        return str(int(num)) if num == num.to_integral_value() else v.text
+    except InvalidOperation:
+        return v.text
+
+
+def xlsx_rows(path: Path, sheet_hint: str) -> tuple[str, "iter"]:
+    """Ek paket gerektirmeyen XLSX okuyucu. Adında sheet_hint geçen sayfayı (yoksa ilkini) okur."""
+    zf = zipfile.ZipFile(path)
+    workbook = ET.fromstring(zf.read("xl/workbook.xml"))
+    sheets = [(s.get("name") or "", s.get(DOC_REL_NS + "id")) for s in workbook.iter(XLSX_NS + "sheet")]
+    rels = {r.get("Id"): r.get("Target") or ""
+            for r in ET.fromstring(zf.read("xl/_rels/workbook.xml.rels")).iter(PKG_REL_NS + "Relationship")}
+    name, rel_id = next(((n, r) for n, r in sheets if sheet_hint in fold(n)), sheets[0])
+    target = rels[rel_id].lstrip("/")
+    target = target if target.startswith("xl/") else "xl/" + target
+
+    shared: list[str] = []
+    if "xl/sharedStrings.xml" in zf.namelist():
+        for si in ET.fromstring(zf.read("xl/sharedStrings.xml")).iter(XLSX_NS + "si"):
+            parts = []
+            for child in si:  # okunuş (rPh) metinleri hariç: yalnızca t ve r/t
+                if child.tag == XLSX_NS + "t":
+                    parts.append(child.text or "")
+                elif child.tag == XLSX_NS + "r":
+                    t = child.find(XLSX_NS + "t")
+                    parts.append((t.text or "") if t is not None else "")
+            shared.append("".join(parts))
+
+    def rows():
+        with zf.open(target) as fh:
+            for _, el in ET.iterparse(fh, events=("end",)):
+                if el.tag != XLSX_NS + "row":
+                    continue
+                cells: dict[int, str | None] = {}
+                last = -1
+                for c in el.iter(XLSX_NS + "c"):
+                    col = _col_index(c.get("r", ""))
+                    last = col if col is not None else last + 1
+                    cells[last] = _cell_value(c, shared)
+                yield [cells.get(i) for i in range(max(cells) + 1)] if cells else []
+                el.clear()
+
+    return name, rows()
+
+
 def read_titck(path: Path) -> tuple[list[dict], str]:
     try:
-        import openpyxl
-    except ImportError:
-        raise SystemExit("HATA: openpyxl kurulu değil. Önce şunu çalıştırın: pip install openpyxl")
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    sheet = next((ws for ws in wb.worksheets if "ruhsatli" in fold(ws.title)), wb.worksheets[0])
-    rows = sheet.iter_rows(values_only=True)
+        sheet_name, rows = xlsx_rows(path, "ruhsatli")
+    except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
+        raise SystemExit(f"HATA: {path.name} okunamadı ({exc}). Dosya TİTCK'nin .xlsx listesi mi?")
     columns: dict[str, int] = {}
     for _ in range(15):  # başlık satırı ilk satırlardan birinde
         header = [fold(clean(c)) for c in next(rows, ())]
@@ -210,7 +283,7 @@ def read_titck(path: Path) -> tuple[list[dict], str]:
             break
     if not columns:
         raise SystemExit(
-            f"HATA: '{sheet.title}' sayfasında başlık satırı bulunamadı. Beklenen sütunlar: "
+            f"HATA: '{sheet_name}' sayfasında başlık satırı bulunamadı. Beklenen sütunlar: "
             + ", ".join(HEADERS.values()) + ". TİTCK dosya biçimi değişmiş olabilir; HEADERS'ı güncelleyin."
         )
     records = []
