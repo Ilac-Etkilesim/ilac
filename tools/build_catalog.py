@@ -1,67 +1,75 @@
 """
-Gerçek ürün kataloğu ETL'i: ilaclardb (CC0) → Supabase'e yüklenecek CSV'ler (Issue #2).
+Gerçek ürün kataloğu ETL'i: TİTCK Ruhsatlı Beşeri Tıbbi Ürünler Listesi → Supabase'e yüklenecek CSV'ler.
 
-Girdi : mdaedalus/ilaclardb deposundaki data/cvs/ilac.csv.zip (veya açılmış ilac.csv)
-        https://github.com/mdaedalus/ilaclardb — CC0 1.0, TİTCK/SGK listelerinden türetilmiş,
-        resmî kaynak DEĞİL (bkz. docs/12).
+Girdi : TİTCK "Ruhsatlı Beşeri Tıbbi Ürünler Listesi" XLSX — https://www.titck.gov.tr/dinamikmodul/85
+        Dosya adındaki tarih (ör. ...Listesi16.10.2026...) kaynak tarihi olarak kaydedilir.
+Gerek : Yalnızca Python 3. Ek paket gerekmez (XLSX, standart kütüphaneyle okunur).
 Çıktı : data/build/ (Git'e girmez: .gitignore'daki `build/` kuralı)
-  ingredients.csv             id, atc_code, normalized_name, display_name, needs_review, review_reason, product_count
-  products.csv                gtin, display_name, atc_code, is_demo, data_source, ingredient_source
-  product_ingredients.csv     product_gtin, ingredient_id
-  review_suspicious_names.csv aynı etken madde adının ilgisiz ATC gruplarında geçtiği durumlar
-  review_unresolved.csv       etken maddesi hiçbir yoldan bulunamayan ürünler
-  rejected.csv                barkodu geçersiz satırlar
-  rapor.md                    Issue #2'ye yapıştırılacak özet
+  İlk üç dosyanın sütunları 002_sprint2_rls_and_catalog.sql tablolarıyla birebir aynıdır; Supabase
+  Table Editor → Import data ile dönüşümsüz yüklenir (sıra: ingredients → products → product_ingredients).
+  ingredients.csv            id, normalized_name, display_name, atc_codes ({A,B} dizi biçimi), needs_review, review_reason
+  products.csv               gtin, display_name, atc_code, license_status, is_demo, data_source
+  product_ingredients.csv    product_gtin, ingredient_id
+  review_ingredients.csv     needs_review=true kayıtlar (kategori adı) + kaç üründe geçtiği, elle düzeltilecek
+  review_spelling_merges.csv aynı madde sayılıp birleştirilen yazımlar (göz gezdirilecek)
+  rejected.csv               barkodu geçersiz/tekrar eden ya da etkin maddesi boş satırlar
+  rapor.md                   Issue #2'ye yapıştırılacak özet
 
-NEDEN ATC: ilaclardb'deki etken madde ADI ürüne göre değil ATC koduna göre yazılmış ve bazı ATC
-gruplarında yanlış (ör. Morfia/morfin N02AA01 → "Eslikarbazepin", Concor/bisoprolol C07AB07 →
-"Mometazon"). ATC kodları ise markalarla tutarlı. Bu yüzden:
-  * Tek maddeli ürünlerde etken madde kimliği = 7 haneli ATC kodu. Ad yalnızca görüntü bilgisidir;
-    etkileşim mantığı ada değil bu kimliğe dayanır. Adlar TİTCK listesiyle doğrulanmadan
-    kullanıcıya gösterilmemelidir.
-  * Kombine ürünlerde (ör. Amoksisilin + Klavulanik Asit) ve 4-5 haneli grup kodlu ürünlerde madde
-    kimliği ATC'den çıkmaz. Bunlar için ada dayalı, "elle bakılacak" kayıt açılır ve ATC'ye
-    BAĞLANMAZ: adla bağlamak denendi, A10BK01 (dapagliflozin) "flurbiprofen" yazıldığı için
-    Majezik gargarayı dapagliflozine bağladı.
-  * Etken madde id'si uuid5 ile üretilir: ATC'li kayıtta "atc:<KOD>", adla açılanda "name:<ad>".
-    Kural üreten script'ler id'yi ATC kodundan aynı yolla hesaplayabilir.
+Yöntem:
+  1. Barkod → GTIN-14: 13 hanenin başına 0, 12 hanenin başına 00; GS1 kontrol basamağı denetlenir.
+  2. Etkin madde metni ürün bazında TİTCK'den alınır ve parçalara ayrılır: + , / ; "ve"
+     (66,5 gibi ondalıklar bölünmez). Her parça bir etken maddedir; kombine ürünler böyle bağlanır.
+     Tek başına madde olamayan kırıntılar ("l", "hcl") atılır; metnin çoğu kırıntıysa (aşı
+     serotipleri, "vitamin B1, B6 ve B12") metin bölünmez, tek madde sayılır.
+  3. Okunabilir anahtar: Türkçe harfler sadeleştirilir, parantez içi, sondaki hidrat ve tuz ekleri
+     atılır ("naproksen sodyum" = naproksen, "morfin sülfat" = morfin); kısa bir açık listeyle tuz
+     ve asit adları eşlenir ("potasyum klavulanat" = klavulanik asit).
+  4. Yazım farkları birleştirilir: eşleştirme anahtarı (match_key) sondaki t/d, z/s, y/i, x/ks,
+     ph/f, th/t ve çift harf farklarını aynılaştırır ("hidroklorotiyazit" = "hidroklorotiyazid");
+     ayrıca aynı tek maddeli ATC kodu altında benzerliği >= 0,85 olan anahtarlar aynı madde
+     sayılır ("morphine" = "morfin"). Birleşenler review_spelling_merges.csv'de listelenir.
+  5. Her etken maddenin atc_codes alanı, o maddenin TEK BAŞINA bulunduğu ürünlerin 7 haneli ATC
+     kodlarıdır. Etkileşim kuralları INN → ATC → etken madde yoluyla eşlenebilir; ATC'si olmayan
+     maddeler (ör. klavulanik asit yalnız kombinasyonda geçer) adla eşlenmelidir.
+  6. Etken madde id'si uuid5(NAMESPACE, "name:<anahtar>"): aynı girdiyle her çalıştırmada aynı id.
 
-Barkod → GTIN-14: 13 hanenin başına 0, 12 hanenin başına 00; GS1 kontrol basamağı denetlenir.
+Tarihçe: İlk sürüm ilaclardb (CC0) kullanıyordu. O kaynakta etkin madde adları ATC koduna göre
+yazılmış ve bazı gruplarda yanlıştı (Morfia → "Eslikarbazepin", Concor → "Mometazon"); TİTCK
+listesi bu ürünlerin hepsinde doğru adı veriyor. Bu yüzden kaynak TİTCK'ye çevrildi (Issue #2).
 
-Bu çıktı klinik doğrulama DEĞİLDİR. Taslak şemaya doğrudan yüklenemez; gereken migration
-değişiklikleri rapor.md'de yazar.
+Bu çıktı klinik doğrulama DEĞİLDİR. Etkileşim kuralları ayrıca kaynaklı ve doğrulanmış olmalıdır.
+Taslak şemaya doğrudan yüklenemez; gereken migration değişiklikleri rapor.md'de yazar.
 
 Kullanım:
-  python tools/build_catalog.py <ilac.csv.zip veya ilac.csv yolu> [--out data/build]
+  python tools/build_catalog.py <TİTCK xlsx yolu> [--out data/build]
 Çıkış kodu 0 = tutarlılık kontrolleri geçti, 1 = hata var.
 """
 from __future__ import annotations
 
 import argparse
 import csv
-import io
+import difflib
 import re
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter, defaultdict
+from decimal import Decimal, InvalidOperation
 from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "data" / "build"
-DATA_SOURCE = "ilaclardb v2.0.0 (CC0) — TİTCK/SGK türevi, resmî değil"
-
-# ilaclardb sütun adları. Kaynak değişirse script açık bir hatayla durur (sessiz kayma olmasın).
-COL_NAME = "İlaç Bilgisi_İlaç Adı"
-COL_BARCODE = "İlaç Bilgisi_Barkod"
-COL_ATC = "İlaç Bilgisi_ATC Kodu"
-COL_INGREDIENT = "İlaç Bilgisi_Active_Ingredient"
-COL_STATUS = "Satıcı Bilgisi_Durumu"
-REQUIRED = [COL_NAME, COL_BARCODE, COL_ATC, COL_INGREDIENT]
 
 # Sabit ad alanı: id'ler buna bağlı. Değiştirmeyin, yoksa tüm etken madde id'leri değişir.
 NAMESPACE = uuid.UUID("6f1c2b7e-3a4d-5e8f-9a0b-1c2d3e4f5a6b")
+SIMILARITY = 0.85  # aynı ATC altındaki iki yazım bu benzerliğin üstündeyse aynı madde sayılır
+
+# Sütunlar başlık adıyla bulunur (sıra değişse de çalışır). Başlık değişirse script açık hatayla durur.
+HEADERS = {"barcode": "barkod", "name": "urun adi", "ingredient": "etkin madde", "atc": "atc kodu"}
+SUSPENSION_PREFIX = "ruhsati askida"
+LICENSE_STATUS = {"0": "aktif", "1": "askida_madde23", "2": "askida_farmakovijilans", "3": "askida_madde22"}
 
 TR_FOLD = str.maketrans({
     "ı": "i", "İ": "i", "I": "i", "ş": "s", "Ş": "s", "ğ": "g", "Ğ": "g",
@@ -72,7 +80,7 @@ TR_FOLD = str.maketrans({
 # Sondan atılan tuz/hidrat/ester ekleri (sadeleştirilmiş yazımla). Yalnızca geriye tuz OLMAYAN
 # bir kelime kalıyorsa atılır: "sodyum klorür" ve "kalsiyum asetat" olduğu gibi kalır.
 SALTS = {
-    "hidroklorur", "hcl", "hidrobromur", "hbr", "hidrat", "monohidrat", "dihidrat", "trihidrat",
+    "hidroklorur", "hcl", "hci", "hidrobromur", "hbr", "hidrat", "monohidrat", "dihidrat", "trihidrat",
     "tetrahidrat", "pentahidrat", "hemihidrat", "seskihidrat", "anhidr", "anhidrus", "anhidroz",
     "sodyum", "disodyum", "potasyum", "dipotasyum", "kalsiyum", "magnezyum", "besilat", "maleat",
     "mesilat", "dimesilat", "fumarat", "hemifumarat", "tartarat", "bitartarat", "suksinat",
@@ -81,17 +89,39 @@ SALTS = {
     "dipropiyonat", "propiyonat", "valerat", "furoat", "laktat", "glukonat", "diglukonat",
     "nitrat", "oksalat", "pamoat", "palmitat", "dekanoat", "enantat", "stearat", "hiklat",
     "esilat", "kamsilat", "malat", "hidrojen", "tuzu", "esteri", "inn",
+    "dibazik", "monobazik", "tribazik", "karbonat", "bikarbonat",
+}
+# Kristal suyu ekleri: geriye en az bir kelime kalıyorsa her zaman atılır
+# ("magnezyum klorür hekzahidrat" = "magnezyum klorür").
+HYDRATES = {"hidrat", "monohidrat", "dihidrat", "trihidrat", "tetrahidrat", "pentahidrat", "hekzahidrat",
+            "heksahidrat", "heptahidrat", "oktahidrat", "dekahidrat", "dodekahidrat", "hemihidrat",
+            "seskihidrat", "anhidr", "anhidrus", "anhidroz", "susuz"}
+# Aynı etkin kısmın tuz ve asit adları (yalnızca bu açık liste; genel kural yanlış eşleştirir).
+ANION_TO_ACID = {
+    "klavulanat": "klavulanik asit", "valproat": "valproik asit", "fusidat": "fusidik asit",
+    "mikofenolat": "mikofenolik asit", "alendronat": "alendronik asit", "risedronat": "risedronik asit",
+    "ibandronat": "ibandronik asit", "zoledronat": "zoledronik asit",
 }
 
-MISSING_MARKERS = ("bulunamad",)
+# Madde değil, kategori adı olan yazımlar (TİTCK'de bazı ürünlerde ATC grup adı yazılmış:
+# "ramipril and diuretics", "amoxicillin and enzyme inhibitor").
+GENERIC_WORDS = {"various", "combinations", "products", "carbohydrates", "electrolytes",
+                 "elektrolitler", "karbonhidratlar", "anesthetics", "vitamins", "other",
+                 "diuretics", "inhibitor", "inhibitors", "agents"}
+
 SPLIT_RE = re.compile(r"\s*(?:\+|;|/|\n|(?<!\d),(?!\d)|\s+ve\s+|\s+and\s+)\s*", re.IGNORECASE)
 PAREN_RE = re.compile(r"\([^)]*\)|\[[^\]]*\]")
 DOSE_RE = re.compile(r"^\d+(?:[.,]\d+)?\s*(?:mg|g|mcg|µg|iu|ui|ml)\b\s*", re.IGNORECASE)
 ATC7_RE = re.compile(r"^[A-Z]\d\d[A-Z][A-Z]\d\d$")
+DATE_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})")
 
 
 def fold(text: str) -> str:
     return text.translate(TR_FOLD).lower()
+
+
+def clean(value) -> str:
+    return " ".join(str(value if value is not None else "").replace("\xa0", " ").split())
 
 
 def gs1_ok(gtin14: str) -> bool:
@@ -110,43 +140,55 @@ def to_gtin14(raw: str) -> str | None:
     return None
 
 
-def clean_text(raw: str) -> str:
-    text = (raw or "").replace("_x000D_", " ").replace("\r", " ").strip().strip(".").strip()
-    if not text or any(m in fold(text) for m in MISSING_MARKERS):
-        return ""
-    return text
-
-
 def split_parts(text: str) -> list[str]:
     return [p.strip(" .") for p in SPLIT_RE.split(text) if p and p.strip(" .")]
 
 
 def part_key(part: str) -> str:
-    """Okunabilir anahtar: 'Metformin HCl (500 mg)' -> 'metformin'."""
+    """Okunabilir anahtar: 'Naproksen Sodyum (275 mg)' -> 'naproksen'."""
     text = fold(PAREN_RE.sub(" ", part)).strip()
     text = DOSE_RE.sub("", text)
     tokens = re.sub(r"[^a-z0-9 ]+", " ", text).split()
+    while len(tokens) > 1 and tokens[-1] in HYDRATES:
+        tokens.pop()
     while len(tokens) > 1 and tokens[-1] in SALTS and any(t not in SALTS for t in tokens[:-1]):
         tokens.pop()
+    if tokens and tokens[-1] in ANION_TO_ACID and all(t in SALTS for t in tokens[:-1]):
+        return ANION_TO_ACID[tokens[-1]]  # "potasyum klavulanat" -> "klavulanik asit"
     return " ".join(tokens)
 
 
 def match_key(key: str) -> str:
-    """Boşluksuz eşleştirme anahtarı: 'asetil salisilik asit' = 'asetilsalisilik asit'."""
-    return key.replace(" ", "")
+    """Boşluksuz, yazım farklarını aynılaştıran eşleştirme anahtarı.
+
+    'asetil salisilik asit' = 'asetilsalisilik asit', 'hidroklorotiyazit' = 'hidroklorotiyazid',
+    'dekzametazon' = 'deksametazon'. Kurallar her anahtara aynı biçimde uygulanır; yalnızca sondaki
+    t/d, z/s, y/i, x/ks, ph/f, th/t ve çift harf farkıyla ayrılan iki gerçek madde birleşebilir.
+    """
+    k = key.replace(" ", "").replace("ph", "f").replace("th", "t").replace("x", "ks")
+    k = k.replace("y", "i").replace("z", "s")
+    if k.endswith("t"):
+        k = k[:-1] + "d"
+    return re.sub(r"(.)\1+", r"\1", k)
+
+
+def is_fragment(key: str) -> bool:
+    """Tek başına madde olamayacak parça: 'l', '6b', '19a', 'b12'."""
+    k = key.replace(" ", "")
+    if key in SALTS or key in HYDRATES:  # "metformin, hcl" bölününce kalan "hcl"
+        return True
+    return len(k) <= 2 or k.isdigit() or (len(k) <= 4 and any(c.isdigit() for c in k))
 
 
 def keyed_parts(text: str) -> list[tuple[str, str]]:
-    out = []
-    for part in split_parts(text) if text else []:
-        key = part_key(part)
-        if key:
-            out.append((key, part))
-    return out
-
-
-def ingredient_id(kind: str, value: str) -> str:
-    return str(uuid.uuid5(NAMESPACE, f"{kind}:{value}"))
+    parts = [(part_key(p), p) for p in split_parts(text)] if text else []
+    parts = [(k, p) for k, p in parts if k]
+    fragments = [kp for kp in parts if is_fragment(kp[0])]
+    if fragments and len(fragments) * 4 > len(parts):
+        # Metnin önemli kısmı parça: aşı serotipleri, "vitamin B1, B6 ve B12". Bölme, tek madde say.
+        whole = part_key(text.replace(",", " ").replace("/", " ").replace("+", " "))
+        return [(whole, text)] if whole else []
+    return [kp for kp in parts if kp not in fragments]  # azınlıktaki kırıntıları ("l") at
 
 
 def most_common(counter: Counter):
@@ -154,23 +196,108 @@ def most_common(counter: Counter):
     return sorted(counter.items(), key=lambda kv: (-kv[1], str(kv[0])))[0][0]
 
 
-def read_rows(path: Path) -> list[dict[str, str]]:
-    if path.suffix == ".zip":
-        with zipfile.ZipFile(path) as zf:
-            names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-            if not names:
-                raise SystemExit(f"HATA: {path} içinde CSV yok.")
-            text = zf.read(names[0]).decode("utf-8-sig")
-    else:
-        text = path.read_text(encoding="utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
-    missing = [c for c in REQUIRED if c not in (reader.fieldnames or [])]
-    if missing:
+XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+DOC_REL_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+PKG_REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def _col_index(ref: str) -> int | None:
+    letters = re.match(r"[A-Z]+", ref or "")
+    if not letters:
+        return None
+    n = 0
+    for ch in letters.group(0):
+        n = n * 26 + (ord(ch) - 64)
+    return n - 1
+
+
+def _cell_value(cell: ET.Element, shared: list[str]) -> str | None:
+    kind = cell.get("t")
+    if kind == "inlineStr":
+        return "".join(t.text or "" for t in cell.iter(XLSX_NS + "t"))
+    v = cell.find(XLSX_NS + "v")
+    if v is None or v.text is None:
+        return None
+    if kind == "s":
+        return shared[int(v.text)]
+    if kind in ("str", "e", "b"):
+        return v.text
+    try:  # sayı: 8699508010752 ya da 8.699508010752E+12 -> tam sayı yazımı
+        num = Decimal(v.text)
+        return str(int(num)) if num == num.to_integral_value() else v.text
+    except InvalidOperation:
+        return v.text
+
+
+def xlsx_rows(path: Path, sheet_hint: str) -> tuple[str, "iter"]:
+    """Ek paket gerektirmeyen XLSX okuyucu. Adında sheet_hint geçen sayfayı (yoksa ilkini) okur."""
+    zf = zipfile.ZipFile(path)
+    workbook = ET.fromstring(zf.read("xl/workbook.xml"))
+    sheets = [(s.get("name") or "", s.get(DOC_REL_NS + "id")) for s in workbook.iter(XLSX_NS + "sheet")]
+    rels = {r.get("Id"): r.get("Target") or ""
+            for r in ET.fromstring(zf.read("xl/_rels/workbook.xml.rels")).iter(PKG_REL_NS + "Relationship")}
+    name, rel_id = next(((n, r) for n, r in sheets if sheet_hint in fold(n)), sheets[0])
+    target = rels[rel_id].lstrip("/")
+    target = target if target.startswith("xl/") else "xl/" + target
+
+    shared: list[str] = []
+    if "xl/sharedStrings.xml" in zf.namelist():
+        for si in ET.fromstring(zf.read("xl/sharedStrings.xml")).iter(XLSX_NS + "si"):
+            parts = []
+            for child in si:  # okunuş (rPh) metinleri hariç: yalnızca t ve r/t
+                if child.tag == XLSX_NS + "t":
+                    parts.append(child.text or "")
+                elif child.tag == XLSX_NS + "r":
+                    t = child.find(XLSX_NS + "t")
+                    parts.append((t.text or "") if t is not None else "")
+            shared.append("".join(parts))
+
+    def rows():
+        with zf.open(target) as fh:
+            for _, el in ET.iterparse(fh, events=("end",)):
+                if el.tag != XLSX_NS + "row":
+                    continue
+                cells: dict[int, str | None] = {}
+                last = -1
+                for c in el.iter(XLSX_NS + "c"):
+                    col = _col_index(c.get("r", ""))
+                    last = col if col is not None else last + 1
+                    cells[last] = _cell_value(c, shared)
+                yield [cells.get(i) for i in range(max(cells) + 1)] if cells else []
+                el.clear()
+
+    return name, rows()
+
+
+def read_titck(path: Path) -> tuple[list[dict], str]:
+    try:
+        sheet_name, rows = xlsx_rows(path, "ruhsatli")
+    except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
+        raise SystemExit(f"HATA: {path.name} okunamadı ({exc}). Dosya TİTCK'nin .xlsx listesi mi?")
+    columns: dict[str, int] = {}
+    for _ in range(15):  # başlık satırı ilk satırlardan birinde
+        header = [fold(clean(c)) for c in next(rows, ())]
+        found = {k: header.index(h) for k, h in HEADERS.items() if h in header}
+        if len(found) == len(HEADERS):
+            columns = found
+            susp = [i for i, h in enumerate(header) if h.startswith(SUSPENSION_PREFIX)]
+            if susp:
+                columns["suspension"] = susp[0]
+            break
+    if not columns:
         raise SystemExit(
-            "HATA: ilaclardb sütun adları değişmiş, eksik: " + ", ".join(missing)
-            + "\nSütunları kontrol edip script başındaki COL_* sabitlerini güncelleyin."
+            f"HATA: '{sheet_name}' sayfasında başlık satırı bulunamadı. Beklenen sütunlar: "
+            + ", ".join(HEADERS.values()) + ". TİTCK dosya biçimi değişmiş olabilir; HEADERS'ı güncelleyin."
         )
-    return list(reader)
+    records = []
+    for row in rows:
+        if not any(c not in (None, "") for c in row):
+            continue
+        get = lambda k: clean(row[columns[k]]) if k in columns and columns[k] < len(row) else ""
+        records.append({k: get(k) for k in list(HEADERS) + ["suspension"]})
+    m = DATE_RE.search(path.name)
+    list_date = f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else "tarih belirtilmedi"
+    return records, list_date
 
 
 def write_csv(path: Path, header: list[str], rows: list[list]) -> None:
@@ -180,30 +307,26 @@ def write_csv(path: Path, header: list[str], rows: list[list]) -> None:
         writer.writerows(rows)
 
 
-class Ingredients:
+class UnionFind:
     def __init__(self) -> None:
-        self.rows: dict[str, dict] = {}  # id -> kayıt
+        self.parent: dict[str, str] = {}
 
-    def by_atc(self, atc: str, key: str, display: str, reason: str = "") -> str:
-        iid = ingredient_id("atc", atc)
-        row = self.rows.setdefault(iid, {
-            "atc": atc, "name": key, "display": display, "reasons": [], "products": 0})
-        if reason and reason not in row["reasons"]:
-            row["reasons"].append(reason)
-        return iid
+    def find(self, x: str) -> str:
+        self.parent.setdefault(x, x)
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
 
-    def by_name(self, key: str, display: str, reason: str) -> str:
-        iid = ingredient_id("name", match_key(key))
-        row = self.rows.setdefault(iid, {
-            "atc": "", "name": key, "display": display, "reasons": [], "products": 0})
-        if reason not in row["reasons"]:
-            row["reasons"].append(reason)
-        return iid
+    def union(self, a: str, b: str) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[max(ra, rb)] = min(ra, rb)  # deterministik kök
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("source", type=Path, help="ilaclardb data/cvs/ilac.csv.zip veya ilac.csv")
+    parser.add_argument("source", type=Path, help="TİTCK Ruhsatlı Beşeri Tıbbi Ürünler Listesi (.xlsx)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     if not args.source.exists():
@@ -211,175 +334,167 @@ def main() -> int:
         return 1
     args.out.mkdir(parents=True, exist_ok=True)
 
-    raw_rows = read_rows(args.source)
+    records, list_date = read_titck(args.source)
+    data_source = f"TİTCK Ruhsatlı Beşeri Tıbbi Ürünler Listesi ({list_date})"
 
     # 1) Barkod ve metin temizliği
     products: list[dict] = []
     rejected: list[list] = []
     seen: set[str] = set()
-    for r in raw_rows:
-        name = " ".join((r.get(COL_NAME) or "").split())  # satır sonları CSV içe aktarımını bozar
-        gtin = to_gtin14(r.get(COL_BARCODE, ""))
+    for r in records:
+        gtin = to_gtin14(r["barcode"])
         if gtin is None:
-            rejected.append([r.get(COL_BARCODE, ""), name, "GTIN-14'e çevrilemedi / kontrol basamağı hatalı"])
+            rejected.append([r["barcode"], r["name"], "GTIN-14'e çevrilemedi / kontrol basamağı hatalı"])
             continue
         if gtin in seen:
-            rejected.append([r.get(COL_BARCODE, ""), name, "tekrar eden barkod"])
+            rejected.append([r["barcode"], r["name"], "tekrar eden barkod (ilk satır kullanıldı)"])
             continue
-        status = (r.get(COL_STATUS) or "").strip()
-        if status and fold(status) != "aktif":
-            rejected.append([r.get(COL_BARCODE, ""), name, f"durum: {status}"])
+        parts = keyed_parts(r["ingredient"])
+        if not parts:
+            rejected.append([r["barcode"], r["name"], "etkin madde boş"])
             continue
         seen.add(gtin)
-        text = clean_text(r.get(COL_INGREDIENT, ""))
-        products.append({"gtin": gtin, "name": name, "atc": (r.get(COL_ATC) or "").strip().upper(),
-                         "text": text, "parts": keyed_parts(text)})
+        products.append({
+            "gtin": gtin, "name": r["name"], "atc": r["atc"].replace(" ", "").upper(), "parts": parts,
+            "status": LICENSE_STATUS.get(r["suspension"], "bilinmiyor"),
+        })
 
-    # 2) ATC başına çoğunluk metni (metni olan ürünlerden)
-    votes: dict[str, Counter] = defaultdict(Counter)
-    examples: dict[tuple, list] = {}
+    # 2) Yazım farklarını birleştir: aynı tek maddeli ATC altında, benzer anahtarlar
+    uf = UnionFind()
+    by_atc: dict[str, set[str]] = defaultdict(set)
     for p in products:
-        if p["atc"] and p["parts"]:
-            sig = tuple(sorted(match_key(k) for k, _ in p["parts"]))
-            votes[p["atc"]][sig] += 1
-            examples.setdefault((p["atc"], sig), p["parts"])
-    atc_parts = {atc: examples[(atc, most_common(v))] for atc, v in votes.items()}
+        for key, _ in p["parts"]:
+            uf.find(match_key(key))
+        if ATC7_RE.match(p["atc"]) and len(p["parts"]) == 1:
+            by_atc[p["atc"]].add(match_key(p["parts"][0][0]))
+    for atc in sorted(by_atc):
+        keys = sorted(by_atc[atc])
+        for i, a in enumerate(keys):
+            for b in keys[i + 1:]:
+                if difflib.SequenceMatcher(None, a, b).ratio() >= SIMILARITY:
+                    uf.union(a, b)
 
-    # 3) Ad → tek maddeli 7 haneli ATC adayları; ilgisiz gruplarda geçen adlar şüpheli
-    name_atcs: dict[str, set[str]] = defaultdict(set)
-    for atc, parts in atc_parts.items():
-        if ATC7_RE.match(atc) and len(parts) == 1:
-            name_atcs[match_key(parts[0][0])].add(atc)
-    suspicious = {mk: atcs for mk, atcs in name_atcs.items() if len({a[0] for a in atcs}) > 1}
-    suspicious_atcs = {a for atcs in suspicious.values() for a in atcs}
+    # 3) Küme → etken madde
+    spaced: dict[str, Counter] = defaultdict(Counter)    # küme -> okunabilir anahtar sayıları
+    displays: dict[str, Counter] = defaultdict(Counter)  # küme -> orijinal yazımlar
+    atcs: dict[str, set[str]] = defaultdict(set)
+    for p in products:
+        for key, display in p["parts"]:
+            root = uf.find(match_key(key))
+            spaced[root][key] += 1
+            displays[root][display.lower()] += 1
+        if ATC7_RE.match(p["atc"]) and len(p["parts"]) == 1:
+            atcs[uf.find(match_key(p["parts"][0][0]))].add(p["atc"])
 
-    def resolve(key: str, display: str) -> str:
-        """Kombine ürün parçası / grup kodlu ürün: ada dayalı kayıt, ATC'ye BAĞLANMAZ.
+    canon = {root: most_common(c) for root, c in spaced.items()}
+    ids = {root: str(uuid.uuid5(NAMESPACE, "name:" + match_key(canon[root]))) for root in spaced}
 
-        ilaclardb adları ATC'ye bağlamak için güvenilir değil (ör. A10BK01 dapagliflozin
-        "flurbiprofen" diye yazılmış; adla bağlanınca Majezik gargara dapagliflozine gidiyordu).
-        Yanlış bir maddenin kurallarıyla kontrol etmektense "kontrol tamamlanamadı" daha güvenli.
-        Adlar TİTCK listesinden doğrulandıktan sonra bu kayıtlar ATC'ye elle/yeni script'le bağlanır.
-        """
-        return ing.by_name(key, display, "adla açıldı, ATC'ye bağlanmadı: TİTCK ile doğrula")
-
-    # 4) Ürün → etken madde
-    ing = Ingredients()
-    out_products: list[list] = []
     links: list[tuple[str, str]] = []
-    unresolved: list[list] = []
-    source_count: Counter = Counter()
-
-    def link(p: dict, iids: list[str], source: str) -> None:
-        source_count[source] += 1
-        out_products.append([p["gtin"], p["name"], p["atc"], "false", DATA_SOURCE, source])
-        for iid in dict.fromkeys(iids):
-            links.append((p["gtin"], iid))
-            ing.rows[iid]["products"] += 1
-
+    product_count: Counter = Counter()
+    samples: dict[str, list[str]] = defaultdict(list)
     for p in products:
-        atc = p["atc"]
-        group = atc_parts.get(atc, [])
-        parts = p["parts"] or group
-        if ATC7_RE.match(atc) and len(parts) <= 1:
-            if parts:
-                key, display = group[0] if len(group) == 1 else parts[0]
-                reason = "ad başka anatomik grupta da geçiyor, TİTCK ile doğrula" if atc in suspicious_atcs else ""
-                link(p, [ing.by_atc(atc, key, display, reason)], "atc")
-            else:
-                link(p, [ing.by_atc(atc, "", "", "kaynakta ad yok, TİTCK'den doldur")], "atc_name_missing")
-        elif len(parts) > 1:
-            link(p, [resolve(k, d) for k, d in parts], "combo_text" if p["parts"] else "combo_atc_group")
-        elif parts:  # 4–5 haneli grup kodu: madde kimliği koddan çıkmaz, adla kayıt açılır
-            link(p, [resolve(parts[0][0], parts[0][1])], "group_code_by_name")
-        else:
-            unresolved.append([p["gtin"], p["name"], atc, p["text"]])
+        for root in dict.fromkeys(uf.find(match_key(k)) for k, _ in p["parts"]):
+            links.append((p["gtin"], ids[root]))
+            product_count[root] += 1
+            if len(samples[root]) < 2:
+                samples[root].append(p["name"])
 
-    # 5) Yaz
+    # needs_review yalnızca kaydın kendisi şüpheliyse true: check_drug_risk() bunu kullanıcıya
+    # "inceleme gerekli" olarak yansıtır. ATC'nin olmaması bir şüphe değil (hidroklorotiyazid,
+    # klavulanik asit Türkiye'de yalnız kombinasyonda var); bu bilgi atc_codes = {} ile görülür.
     ing_rows = []
-    for iid, row in sorted(ing.rows.items(), key=lambda kv: (kv[1]["atc"] == "", kv[1]["atc"], kv[1]["name"])):
-        if row["products"]:
-            ing_rows.append([iid, row["atc"], row["name"], row["display"],
-                             "true" if row["reasons"] else "false", "; ".join(row["reasons"]), row["products"]])
+    review_rows = []
+    merges = []
+    for root in sorted(spaced, key=lambda r: canon[r]):
+        reason = "kategori adı, madde değil" if set(canon[root].split()) & GENERIC_WORDS else ""
+        # PostgreSQL dizi biçimi: Supabase CSV içe aktarımı text[] sütununa doğrudan yükler.
+        atc_literal = "{" + ",".join(sorted(atcs[root])) + "}"
+        ing_rows.append([ids[root], canon[root], most_common(displays[root]), atc_literal,
+                         "true" if reason else "false", reason])
+        if reason:
+            review_rows.append([canon[root], reason, product_count[root], " | ".join(samples[root])])
+        if len(spaced[root]) > 1:
+            merges.append([canon[root], " | ".join(sorted(spaced[root])), atc_literal])
+
+    # 4) Yaz — sütunlar 002_sprint2_rls_and_catalog.sql tablolarıyla birebir aynı (dönüşümsüz yükleme)
     write_csv(args.out / "ingredients.csv",
-              ["id", "atc_code", "normalized_name", "display_name", "needs_review", "review_reason", "product_count"],
+              ["id", "normalized_name", "display_name", "atc_codes", "needs_review", "review_reason"],
               ing_rows)
+    write_csv(args.out / "review_ingredients.csv",
+              ["normalized_name", "review_reason", "product_count", "sample_products"], review_rows)
     write_csv(args.out / "products.csv",
-              ["gtin", "display_name", "atc_code", "is_demo", "data_source", "ingredient_source"], out_products)
+              ["gtin", "display_name", "atc_code", "license_status", "is_demo", "data_source"],
+              [[p["gtin"], p["name"], p["atc"], p["status"], "false", data_source] for p in products])
     write_csv(args.out / "product_ingredients.csv", ["product_gtin", "ingredient_id"], [list(x) for x in links])
-    sample = defaultdict(list)
-    for p in products:
-        if p["atc"] in suspicious_atcs and len(sample[p["atc"]]) < 2:
-            sample[p["atc"]].append(p["name"])
-    write_csv(args.out / "review_suspicious_names.csv", ["name", "atc_code", "sample_products"],
-              [[mk, a, " | ".join(sample[a])] for mk, atcs in sorted(suspicious.items()) for a in sorted(atcs)])
-    write_csv(args.out / "review_unresolved.csv", ["gtin", "display_name", "atc_code", "raw_text"], unresolved)
+    write_csv(args.out / "review_spelling_merges.csv", ["normalized_name", "merged_spellings", "atc_codes"], merges)
     write_csv(args.out / "rejected.csv", ["raw_barcode", "display_name", "reason"], rejected)
 
-    # 6) Tutarlılık kontrolleri (hata = çıkış kodu 1)
+    # 5) Tutarlılık kontrolleri (hata = çıkış kodu 1)
     errors: list[str] = []
-    ids = [r[0] for r in ing_rows]
-    atcs = [r[1] for r in ing_rows if r[1]]
-    if len(ids) != len(set(ids)):
+    id_list = [r[0] for r in ing_rows]
+    names = [r[1] for r in ing_rows]
+    if len(id_list) != len(set(id_list)):
         errors.append("ingredients.id tekrar ediyor")
-    if len(atcs) != len(set(atcs)):
-        errors.append("ingredients.atc_code tekrar ediyor")
-    if not all(gs1_ok(r[0]) for r in out_products):
+    if len(names) != len(set(names)):
+        errors.append("ingredients.normalized_name tekrar ediyor: "
+                      + str([n for n, c in Counter(names).items() if c > 1][:5]))
+    if not all(gs1_ok(p["gtin"]) for p in products):
         errors.append("products içinde geçersiz GTIN var")
-    if {g for g, _ in links} != {r[0] for r in out_products}:
+    if {g for g, _ in links} != {p["gtin"] for p in products}:
         errors.append("etken maddesi olmayan ürün products.csv'ye girmiş")
-    if set(ids) != {i for _, i in links}:
+    if set(id_list) != {i for _, i in links}:
         errors.append("product_ingredients ile ingredients uyuşmuyor")
     if len(set(links)) != len(links):
         errors.append("product_ingredients'ta tekrar eden satır var")
 
     per_product = Counter(g for g, _ in links)
-    combo = sum(1 for c in per_product.values() if c > 1)
-    no_name = sum(1 for r in ing_rows if not r[2])
-    name_only = sum(1 for r in ing_rows if not r[1])
+    status = Counter(p["status"] for p in products)
+    no_atc = sum(1 for r in ing_rows if r[3] == "{}")
     lines = [
         f"# Gerçek katalog ETL raporu ({date.today().isoformat()})",
         "",
-        f"Kaynak: `{args.source.name}` — {DATA_SOURCE}. Klinik doğrulama değildir.",
+        f"Kaynak: {data_source}, `{args.source.name}`. Klinik doğrulama değildir.",
         "",
         "| Gösterge | Sayı |",
         "|---|---|",
-        f"| Kaynaktaki satır | {len(raw_rows)} |",
-        f"| Reddedilen (barkod/durum) | {len(rejected)} |",
-        f"| Kataloğa giren ürün | {len(out_products)} |",
-        f"| — tek maddeli, ATC ile bağlandı | {source_count['atc']} |",
-        f"| — tek maddeli, ATC ile bağlandı ama kaynakta ad yok | {source_count['atc_name_missing']} |",
-        f"| — kombine (2+ etken madde) | {combo} |",
-        f"| — 4-5 haneli grup kodlu, adla kayıt açıldı | {source_count['group_code_by_name']} |",
-        f"| Etken maddesi bulunamayan ürün (kataloğa girmedi) | {len(unresolved)} |",
+        f"| Kaynaktaki satır | {len(records)} |",
+        f"| Reddedilen (barkod / tekrar / boş etkin madde) | {len(rejected)} |",
+        f"| Kataloğa giren ürün | {len(products)} |",
+        f"| — ruhsatı aktif | {status['aktif']} |",
+        f"| — ruhsatı askıda | {len(products) - status['aktif'] - status['bilinmiyor']} |",
+        f"| — kombine (2+ etken madde) | {sum(1 for c in per_product.values() if c > 1)} |",
         f"| Etken madde kaydı | {len(ing_rows)} |",
-        f"| — adı boş (TİTCK'den doldurulacak) | {no_name} |",
-        f"| — ATC'siz, adla açıldı (elle bakılacak) | {name_only} |",
-        f"| — adı şüpheli ATC kaydı | {len(suspicious_atcs)} |",
+        f"| — ATC'si olmayan (adla eşlenecek) | {no_atc} |",
+        f"| — kategori adı, madde değil | {sum(1 for r in ing_rows if 'kategori' in r[5])} |",
+        f"| Yazım farkı birleştirilen madde | {len(merges)} |",
         f"| Ürün–etken madde bağlantısı | {len(links)} |",
         "",
-        "## Veri kalitesi uyarısı",
+        "## Supabase'e yükleme",
         "",
-        "ilaclardb'de etken madde adı ATC koduna göre yazılmış ve bazı gruplarda yanlış. Örnekler:"
-        " Morfia (morfin, N02AA01) → \"Eslikarbazepin\"; Concor (bisoprolol, C07AB07) → \"Mometazon\";"
-        " Tivicay (dolutegravir, J05AJ03) → \"Denosumab\"; Apranax (naproksen, M01AE02) → \"Rasajilin\";"
-        " Daprenza (dapagliflozin, A10BK01) → \"Flurbiprofen\"."
-        " Son örnek otomatik şüpheli listesine düşmüyor; yani işaretsiz adlar da doğrulanmış değildir."
-        " Bu yüzden etken madde kimliği ATC kodudur, kombine ürünler adla ATC'ye bağlanmaz ve hiçbir ad"
-        " TİTCK listesiyle doğrulanmadan kullanıcıya gösterilmemelidir."
-        " Kesin hatalı adaylar: `review_suspicious_names.csv`.",
+        "Şema: `supabase/migrations/20261102_002_sprint2_rls_and_catalog.sql` (PR #25). CSV sütunları"
+        " tablolarla birebir aynıdır; `atc_codes` PostgreSQL dizi biçimindedir (`{M01AE01,M02AA13}`, boşsa `{}`)."
+        " Bu yüzden Table Editor → Import data ile dönüşümsüz yüklenir.",
         "",
-        "## Şemaya yüklemeden önce gereken migration",
+        f"`needs_review = true` yalnızca kaydın kendisi şüpheliyse (kategori adı) işaretlenir:"
+        f" {len(review_rows)} kayıt, liste `review_ingredients.csv`'de.",
         "",
-        "1. `product_ingredients(product_gtin text references products(gtin), ingredient_id uuid references ingredients(id), primary key (product_gtin, ingredient_id))`; RLS açık, `authenticated` için yalnızca `select`.",
-        "2. `products.ingredient_id` kaldırılmalı ya da `null` olabilmeli (kombine ürünler tek sütuna sığmıyor); `products.atc_code text` eklenmeli.",
-        "3. `ingredients`: `atc_code text unique` (null olabilir), `display_name text`, `needs_review boolean`, `review_reason text`; `normalized_name` üzerindeki `unique` kaldırılmalı (aynı madde farklı ATC'lerde: ibuprofen ağızdan M01AE01, haricen M02AA13).",
-        "4. `check_drug_risk()` ürünlerin tüm etken maddelerini `product_ingredients` üzerinden karşılaştırmalı.",
-        "",
-        "Etken madde id'si: ATC'li kayıtta `uuid5(NAMESPACE, 'atc:<KOD>')`. Etkileşim kuralı üreten script"
-        " aynı NAMESPACE ile id'yi ATC kodundan hesaplayabilir (bkz. `tools/build_catalog.py`).",
+        "Etkileşim kuralı eşlemesi: INN → ATC kodu → `atc_codes` alanında o kodu taşıyan etken madde(ler)."
+        " ATC'si olmayan maddeler (ör. klavulanik asit, hidroklorotiyazid: Türkiye'de yalnız kombinasyonda"
+        " geçiyor) adla eşlenir. Etken madde id'si `uuid5(NAMESPACE, 'name:' + match_key(normalized_name))`"
+        " (bkz. `tools/build_catalog.py`).",
         "",
         "Yükleme sırası: `ingredients.csv` → `products.csv` → `product_ingredients.csv`.",
+        "",
+        "## Bilinen sınırlar",
+        "",
+        "- TİTCK'de bazı ürünlerde etkin madde yerine ATC grup adı yazıyor (\"ramipril and diuretics\","
+        " \"amoxicillin and enzyme inhibitor\"). Bu ürünlerin ikinci maddesi bilinmiyor; `needs_review`"
+        " ile işaretli \"kategori adı\" kayıtları elle düzeltilmeli.",
+        "- Yazım farkları birleştirildi (ör. morfin/morphine, hidroklorotiyazit/hidroklorotiyazid);"
+        " liste `review_spelling_merges.csv`'de. Birleşmeyen Türkçe/İngilizce çiftler aynı ATC kodunu"
+        " taşıdığı için kural eşlemesinde yine birlikte yakalanır.",
+        "- Aşı ve vitamin karışımları (\"vitamin B1, B6 ve B12\") tek etken madde olarak tutuldu.",
+        "- Ürün adı, etkin madde ve ATC TİTCK'nin yazdığı gibidir; klinik doğrulama yapılmadı.",
         "",
         "## Kontroller",
         "",
@@ -387,7 +502,7 @@ def main() -> int:
     lines += [f"- HATA: {e}" for e in errors] or ["- Tüm tutarlılık kontrolleri geçti."]
     (args.out / "rapor.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    print("\n".join(lines[4:19]))
+    print("\n".join(lines[4:17]))
     print(f"\nÇıktılar: {args.out}")
     if errors:
         print("\n".join("HATA: " + e for e in errors), file=sys.stderr)
