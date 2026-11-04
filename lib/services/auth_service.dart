@@ -13,7 +13,8 @@ class AuthService {
   /// Supabase istemcisinin başlatılıp başlatılmadığını güvenli şekilde döndürür.
   static bool get isConfigured {
     try {
-      return Supabase.instance.client != null;
+      Supabase.instance;
+      return true;
     } catch (_) {
       return false;
     }
