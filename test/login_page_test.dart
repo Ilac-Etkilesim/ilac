@@ -29,17 +29,26 @@ void main() {
     );
   }
 
-  void setLargeViewport(WidgetTester tester) {
+  Future<void> setLargeScreen(WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 1.0;
-    addTearDown(() {
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
   }
 
+  Future<void> tapTarget(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    await tester.tap(finder, warnIfMissed: false);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('Giriş ekranında gerekli bileşenler ve zorunlu demo notu görünür', (tester) async {
-    setLargeViewport(tester);
+    await setLargeScreen(tester);
     await tester.pumpWidget(createLoginWidget());
 
     // Başlık ve logo
@@ -62,34 +71,31 @@ void main() {
   });
 
   testWidgets('Form boş bırakılıp Giriş Yap tıklandığında Türkçe validasyon hataları gösterilir', (tester) async {
-    setLargeViewport(tester);
+    await setLargeScreen(tester);
     await tester.pumpWidget(createLoginWidget());
 
     final loginButton = find.byKey(const Key('login_submit_button'));
-    await tester.ensureVisible(loginButton);
-    await tester.tap(loginButton);
-    await tester.pumpAndSettle();
+    await tapTarget(tester, loginButton);
 
     expect(find.text('Lütfen e-posta adresinizi giriniz.'), findsOneWidget);
   });
 
   testWidgets('Geçersiz e-posta girildiğinde validasyon hatası gösterilir', (tester) async {
-    setLargeViewport(tester);
+    await setLargeScreen(tester);
     await tester.pumpWidget(createLoginWidget());
 
     final emailField = find.byKey(const Key('login_email_field'));
     await tester.enterText(emailField, 'gecersiz-eposta');
+    await tester.pumpAndSettle();
 
     final loginButton = find.byKey(const Key('login_submit_button'));
-    await tester.ensureVisible(loginButton);
-    await tester.tap(loginButton);
-    await tester.pumpAndSettle();
+    await tapTarget(tester, loginButton);
 
     expect(find.text('Lütfen geçerli bir e-posta adresi giriniz.'), findsOneWidget);
   });
 
   testWidgets('Giriş başarısız olduğunda ekranda Türkçe hata mesajı gösterilir', (tester) async {
-    setLargeViewport(tester);
+    await setLargeScreen(tester);
     await tester.pumpWidget(createLoginWidget(
       authService: const _FakeFailingAuthService(),
     ));
@@ -99,11 +105,10 @@ void main() {
 
     final passwordField = find.byKey(const Key('login_password_field'));
     await tester.enterText(passwordField, '123456');
+    await tester.pumpAndSettle();
 
     final loginButton = find.byKey(const Key('login_submit_button'));
-    await tester.ensureVisible(loginButton);
-    await tester.tap(loginButton);
-    await tester.pumpAndSettle();
+    await tapTarget(tester, loginButton);
 
     expect(
       find.text('E-posta veya şifre hatalı. Lütfen bilgilerinizi kontrol ediniz.'),
@@ -112,13 +117,11 @@ void main() {
   });
 
   testWidgets('Giriş yapmadan demo olarak devam et tıklandığında HomeShell ekranına yönlendirilir', (tester) async {
-    setLargeViewport(tester);
+    await setLargeScreen(tester);
     await tester.pumpWidget(createLoginWidget());
 
     final demoButton = find.byKey(const Key('login_demo_button'));
-    await tester.ensureVisible(demoButton);
-    await tester.tap(demoButton);
-    await tester.pumpAndSettle();
+    await tapTarget(tester, demoButton);
 
     expect(find.byType(HomeShell), findsOneWidget);
     expect(find.text('DEMO'), findsOneWidget);
@@ -126,7 +129,7 @@ void main() {
   });
 
   testWidgets('HomeShell üzerinde çıkış butonu bulunur ve tıklandığında onay diyalogu açılır', (tester) async {
-    setLargeViewport(tester);
+    await setLargeScreen(tester);
     await tester.pumpWidget(const MaterialApp(
       home: HomeShell(isDemoMode: true),
     ));
@@ -134,8 +137,7 @@ void main() {
     final logoutButton = find.byIcon(Icons.logout);
     expect(logoutButton, findsOneWidget);
 
-    await tester.tap(logoutButton);
-    await tester.pumpAndSettle();
+    await tapTarget(tester, logoutButton);
 
     expect(find.text('Çıkış Yap'), findsWidgets);
     expect(find.text('İptal'), findsOneWidget);
