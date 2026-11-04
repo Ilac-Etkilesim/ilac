@@ -234,6 +234,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             const SizedBox(height: 8),
                             TextFormField(
+                              key: const Key('login_email_field'),
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
                               autocorrect: false,
@@ -277,6 +278,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             const SizedBox(height: 8),
                             TextFormField(
+                              key: const Key('login_password_field'),
                               controller: _passwordController,
                               obscureText: _obscurePassword,
                               textInputAction: TextInputAction.done,
@@ -335,6 +337,7 @@ class _LoginPageState extends State<LoginPage> {
                     SizedBox(
                       height: 56,
                       child: ElevatedButton(
+                        key: const Key('login_submit_button'),
                         onPressed: _isLoading ? null : _handleSignIn,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: kBlue,
@@ -369,6 +372,7 @@ class _LoginPageState extends State<LoginPage> {
                     SizedBox(
                       height: 52,
                       child: OutlinedButton.icon(
+                        key: const Key('login_demo_button'),
                         onPressed: _continueAsDemo,
                         icon: const Icon(Icons.arrow_forward, color: kNavy),
                         label: const Text(

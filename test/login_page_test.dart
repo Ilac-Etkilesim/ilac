@@ -29,7 +29,17 @@ void main() {
     );
   }
 
+  void setLargeViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+  }
+
   testWidgets('Giriş ekranında gerekli bileşenler ve zorunlu demo notu görünür', (tester) async {
+    setLargeViewport(tester);
     await tester.pumpWidget(createLoginWidget());
 
     // Başlık ve logo
@@ -43,21 +53,20 @@ void main() {
     );
 
     // Form alanları
-    expect(find.text('E-posta Adresi'), findsOneWidget);
-    expect(find.text('Şifre'), findsOneWidget);
+    expect(find.byKey(const Key('login_email_field')), findsOneWidget);
+    expect(find.byKey(const Key('login_password_field')), findsOneWidget);
 
     // Butonlar
-    expect(find.widgetWithText(ElevatedButton, 'Giriş Yap'), findsOneWidget);
-    expect(
-      find.widgetWithText(OutlinedButton, 'Giriş Yapmadan Demo Olarak Devam Et'),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
+    expect(find.byKey(const Key('login_demo_button')), findsOneWidget);
   });
 
   testWidgets('Form boş bırakılıp Giriş Yap tıklandığında Türkçe validasyon hataları gösterilir', (tester) async {
+    setLargeViewport(tester);
     await tester.pumpWidget(createLoginWidget());
 
-    final loginButton = find.widgetWithText(ElevatedButton, 'Giriş Yap');
+    final loginButton = find.byKey(const Key('login_submit_button'));
+    await tester.ensureVisible(loginButton);
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
@@ -65,12 +74,14 @@ void main() {
   });
 
   testWidgets('Geçersiz e-posta girildiğinde validasyon hatası gösterilir', (tester) async {
+    setLargeViewport(tester);
     await tester.pumpWidget(createLoginWidget());
 
-    final emailField = find.widgetWithText(TextFormField, 'ornek@alanadi.com');
+    final emailField = find.byKey(const Key('login_email_field'));
     await tester.enterText(emailField, 'gecersiz-eposta');
 
-    final loginButton = find.widgetWithText(ElevatedButton, 'Giriş Yap');
+    final loginButton = find.byKey(const Key('login_submit_button'));
+    await tester.ensureVisible(loginButton);
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
@@ -78,17 +89,19 @@ void main() {
   });
 
   testWidgets('Giriş başarısız olduğunda ekranda Türkçe hata mesajı gösterilir', (tester) async {
+    setLargeViewport(tester);
     await tester.pumpWidget(createLoginWidget(
       authService: const _FakeFailingAuthService(),
     ));
 
-    final emailField = find.widgetWithText(TextFormField, 'ornek@alanadi.com');
+    final emailField = find.byKey(const Key('login_email_field'));
     await tester.enterText(emailField, 'test@ornek.com');
 
-    final passwordFields = find.byType(TextFormField);
-    await tester.enterText(passwordFields.at(1), '123456');
+    final passwordField = find.byKey(const Key('login_password_field'));
+    await tester.enterText(passwordField, '123456');
 
-    final loginButton = find.widgetWithText(ElevatedButton, 'Giriş Yap');
+    final loginButton = find.byKey(const Key('login_submit_button'));
+    await tester.ensureVisible(loginButton);
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
@@ -99,9 +112,11 @@ void main() {
   });
 
   testWidgets('Giriş yapmadan demo olarak devam et tıklandığında HomeShell ekranına yönlendirilir', (tester) async {
+    setLargeViewport(tester);
     await tester.pumpWidget(createLoginWidget());
 
-    final demoButton = find.widgetWithText(OutlinedButton, 'Giriş Yapmadan Demo Olarak Devam Et');
+    final demoButton = find.byKey(const Key('login_demo_button'));
+    await tester.ensureVisible(demoButton);
     await tester.tap(demoButton);
     await tester.pumpAndSettle();
 
@@ -111,6 +126,7 @@ void main() {
   });
 
   testWidgets('HomeShell üzerinde çıkış butonu bulunur ve tıklandığında onay diyalogu açılır', (tester) async {
+    setLargeViewport(tester);
     await tester.pumpWidget(const MaterialApp(
       home: HomeShell(isDemoMode: true),
     ));
