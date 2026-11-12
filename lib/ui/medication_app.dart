@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../core/gs1_parser.dart';
+import '../services/auth_service.dart';
 import 'caregiver_page.dart';
+import 'login_page.dart';
 import 'patient_page.dart';
 import 'scanner_page.dart';
 
@@ -9,10 +11,30 @@ const kNavy = Color(0xFF19345E);
 const kBackground = Color(0xFFF3F7FC);
 
 class MedicationApp extends StatelessWidget {
-  const MedicationApp({super.key});
+  const MedicationApp({
+    super.key,
+    this.home,
+    this.authService = const AuthService(),
+  });
+
+  /// Test veya özel durumlar için başlangıç ekranı override'ı.
+  final Widget? home;
+  final AuthService authService;
 
   @override
   Widget build(BuildContext context) {
+    // Başlangıç ekranını belirle:
+    // 1. Parametre olarak home verildiyse onu kullan.
+    // 2. Supabase yapılandırılmamışsa (publishable key boşsa veya demo modunda) -> doğrudan HomeShell(isDemoMode: true).
+    // 3. Supabase yapılandırılmış ve oturum açıksa -> HomeShell(isDemoMode: false).
+    // 4. Supabase yapılandırılmış ama oturum yoksa -> LoginPage().
+    final Widget initialScreen = home ??
+        (!AuthService.isConfigured
+            ? const HomeShell(isDemoMode: true)
+            : (authService.isAuthenticated
+                ? const HomeShell(isDemoMode: false)
+                : const LoginPage()));
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'İlaç ve Yakınlık Takibi',
@@ -40,13 +62,20 @@ class MedicationApp extends StatelessWidget {
           titleMedium: TextStyle(fontWeight: FontWeight.w700, color: kNavy),
         ),
       ),
-      home: const HomeShell(),
+      home: initialScreen,
     );
   }
 }
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({
+    super.key,
+    this.isDemoMode = true,
+    this.authService = const AuthService(),
+  });
+
+  final bool isDemoMode;
+  final AuthService authService;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -69,16 +98,82 @@ class _HomeShellState extends State<HomeShell> {
     ));
   }
 
+  Future<void> _handleSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Çıkış Yap'),
+        content: Text(
+          widget.isDemoMode
+              ? 'Demo modundan çıkıp giriş ekranına dönmek istiyor musunuz?'
+              : 'Oturumunuz kapatılacaktır. Emin misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE02424),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Çıkış Yap'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await widget.authService.signOut();
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final userEmail = widget.authService.currentUserEmail;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('İlaç ve Yakınlık Takibi',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: Center(child: Chip(label: Text('DEMO'))),
+        title: const Text(
+          'İlaç ve Yakınlık Takibi',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
+        actions: [
+          if (widget.isDemoMode)
+            const Padding(
+              padding: EdgeInsets.only(right: 6),
+              child: Center(child: Chip(label: Text('DEMO'))),
+            )
+          else if (userEmail != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Center(
+                child: Tooltip(
+                  message: userEmail,
+                  child: Chip(
+                    avatar: const Icon(Icons.person, size: 16),
+                    label: Text(
+                      userEmail.length > 14
+                          ? '${userEmail.substring(0, 11)}...'
+                          : userEmail,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Çıkış Yap',
+            onPressed: _handleSignOut,
           ),
         ],
       ),
