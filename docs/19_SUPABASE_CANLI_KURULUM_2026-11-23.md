@@ -3,15 +3,23 @@
 **Yapan:** Melike · **Proje:** `ilac-dev` · **Bölge:** Central EU (Frankfurt, `eu-central-1`)
 **PostgreSQL:** 17 · **Plan:** Free
 
-> ## ⚠️ Önce bir düzeltme
-> `docs/14_SPRINT2_SUPABASE_KURULUM_VE_RLS_TESTI.md` içindeki
-> **"Canlı doğrulama sonuçları (2 Kasım 2026, dev Supabase projesi)"** tablosu ve
-> `docs/15_KALICI_TEST_HESABI.md`, o tarihte **var olmayan** bir Supabase projesini
-> anlatıyordu. Issue #5 bu tabloya dayanarak kapatılmıştı.
+> ## ⚠️ Önce bir düzeltme (24 Kasım'da güncellendi)
+> Bu belgenin ilk sürümü, 2 Kasım'daki dev Supabase projesinin **hiç var olmadığını**
+> varsayıyordu. **Bu yanlıştı.** Metehan'ın PR #37 incelemesinde belirttiği ve
+> Issue #5'te doğrulanabildiği üzere, proje 2 Kasım'da gerçekten kurulmuş,
+> 001 ve 002 uygulanmış ve `rls_scenarios.sql` çıktısı ekran görüntüsüyle
+> paylaşılmıştır (2 Kasım, 18:42).
 >
-> Bu belge, 23 Kasım 2026'da **gerçekten kurulan ve çıktıları doğrulanan** ortamı
-> anlatır. `docs/14`'ün yerel (PGlite) doğrulama bölümü geçerliliğini korur;
-> yalnızca canlı bölüm geçersizdir.
+> **Olan şu:** o proje daha sonra silinmiş, silinmeden önce ekibe bildirilmemiştir.
+> Bu yüzden 23 Kasım'da proje bulunamadı, anahtarlar alınamadı ve ortam sıfırdan
+> yeniden kuruldu.
+>
+> Dolayısıyla `docs/14`'teki sonuçlar **uydurma değil**, silinmiş bir projenin
+> gerçek kayıtlarıdır. Ancak bugünkü ortamı temsil etmezler; çalışan ortam
+> bu belgede anlatılandır.
+>
+> **Çıkarılan ders:** ortak bir ortam silinmeden önce ekibe haber verilmeli.
+> Bu, verinin değil, doğrulama zincirinin kaybolmasına yol açtı.
 
 ---
 
@@ -119,6 +127,14 @@ alanı **nesne** olarak dönüyor (liste değil) ve demo kayıtlarda `display_na
 boş olduğu için `normalized_name`'e düşülüyor.
 
 Tüm takım: `flutter analyze` temiz · `flutter test` **49 geçti, 2 atlandı**.
+
+## 6b. Issue #5 hakkında
+
+İlk sürümde "#5 doğrulanmamış bir tabloya dayanarak kapatılmıştı, yeniden
+açılmalı" denmişti. Metehan'ın açıklamasıyla bu değerlendirme değişti: #5
+kapatıldığında doğrulama **gerçekten yapılmıştı**. Yeniden açmaya gerek yok;
+#5'e bu belgeye ve PR #37'ye bağlantı veren bir yorum yeterli. Karar Sprint 3
+liderindedir (Gizem, #29).
 
 ## 7. Yapılmayanlar (bilerek)
 
