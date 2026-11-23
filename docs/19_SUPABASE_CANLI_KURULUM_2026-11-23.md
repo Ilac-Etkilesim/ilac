@@ -139,3 +139,40 @@ Tüm takım: `flutter analyze` temiz · `flutter test` **49 geçti, 2 atlandı**
   panelden uyandırıldığından emin olun.
 - Ücretsiz planda otomatik yedek yoktur. Risk düşük: şemanın tamamı
   `supabase/migrations/` altında, bu belgedeki sırayla yeniden kurulabilir.
+
+---
+
+## 9. Migration takip tablosu (GitHub entegrasyonu öncesi zorunlu adım)
+
+Supabase'in GitHub entegrasyonu, PR merge edildiğinde `supabase/migrations/`
+altındaki dosyaları **otomatik uygular** ve hangilerinin uygulandığını
+`supabase_migrations.schema_migrations` tablosundan takip eder.
+
+Bu kurulumda migration'lar Management API ile elle uygulandı, yani takip
+tablosundan geçmediler. Tablo hiç yoktu. Entegrasyon devreye girdiğinde
+üçünü de "hiç uygulanmamış" sayıp baştan çalıştırmaya kalkardı.
+
+**Bu neden kırılırdı:** `001_initial_draft.sql` tekrar çalıştırılabilir değil.
+İçinde **13 adet `create policy`** var ve hiçbirinde `drop policy if exists`
+koruması yok; ikinci çalıştırmada `policy already exists` hatası verir.
+(Karşılaştırma: `002`'de üç politikanın üçünde de koruma var, `003` zaten
+tekrar çalıştırılabilir yazıldı.)
+
+**Yapılan:** Takip tablosu oluşturuldu ve uygulanan üç migration kaydedildi.
+Bu, gerçeği yansıtır — üçü de gerçekten uygulandı:
+
+| version | name |
+|---|---|
+| `20261021` | `001_initial_draft` |
+| `20261102` | `002_sprint2_rls_and_catalog` |
+| `20261123` | `003_profile_on_signup` |
+
+Sürüm numaraları dosya adlarındaki ilk alt çizgiye kadar olan rakamlardan
+türetildi (Supabase CLI'ın kuralı).
+
+### Metehan'a öneri (kendi alanı, kararı onda)
+
+`001`'deki her `create policy` öncesine `drop policy if exists` eklenirse dosya
+tekrar çalıştırılabilir hale gelir. Takip tablosu sayesinde şu an gerekli
+değil, ama sıfırdan kurulumların ve olası bir yeniden uygulamanın güvenliği
+için sağlamlaştırma olur. `002` bu kalıbı zaten kullanıyor.
