@@ -74,3 +74,57 @@ Betik ilk başarısız kontrolde hata vererek durduğu için bu çıktı, aşağ
 - `same_ingredient` ve demo modu: demo ürünler hâlâ erken `demo_only` döner; bu yüzden aynı etken madde uyarısı demo verisiyle gösterilemez (bkz. PR #11 incelemesi, "demo modu").
 - `same_ingredient` ve `needs_review`: Ali'nin incelemesinde bulundu — paylaşılan belirsiz ATC grup kayıtları (needs_review=true) yanlış pozitif same_ingredient üretiyordu; `check_drug_risk()`'e `and not i.needs_review` eklenerek düzeltildi, gerçek veriyle doğrulandı (Tazeracin/Tienam örneği).
 - Arayüz: `same_ingredient` ve `needs_review` durumlarının ekranda gösterimi (Afra/Melike ile).
+
+---
+
+## #33 — Katalog tablolarının erişim yetkisi ve RLS doğrulaması (Sprint 3, Metehan)
+
+**Test dosyası:** `supabase/tests/catalog_rls.sql` (`rls_scenarios.sql`'den bağımsız; 003 uygulanmış olsa da olmasa da çalışır, sonda `rollback` yapar).
+
+### Erişim modeli
+
+| Tablo | anon | authenticated | RLS |
+|---|---|---|---|
+| `products` | yetki yok | yalnızca okuma | açık |
+| `ingredients` | yetki yok | yalnızca okuma | açık |
+| `product_ingredients` | yetki yok | yalnızca okuma | açık |
+| `interaction_rules` | yetki yok | yetki yok (yalnızca `check_drug_risk()` üzerinden) | açık |
+
+Katalog hasta verisi değildir; giriş yapmış her kullanıcı okuyabilir. Yazma, güncelleme, silme ve `truncate` istemciye tamamen kapalıdır: hem tablo yetkisi yoktur hem de yazmaya izin veren bir politika yoktur. Katalog yalnızca SQL Editor veya sunucu tarafı yükleme ile değiştirilir.
+
+`check_drug_risk()` yalnızca GTIN alır; hasta kimliği istemciden verilemez, `auth.uid()` ile belirlenir. Fonksiyon `security definer` olduğu için RLS'i atlar; bu yüzden hasta filtresi fonksiyonun içinde yapılır ve test bunu ayrıca doğrular.
+
+### Senaryolar
+
+| No | Kontrol |
+|---|---|
+| 5.0 | 4 katalog tablosunda RLS açık; authenticated için yazma yetkisi yok; anon için hiçbir yetki yok; yazmaya izin veren politika yok; `check_drug_risk` tek sürüm, yalnızca `p_gtin` alıyor, `security definer` ve `search_path` sabit |
+| 5.1 | Hasta A ürünleri, etken maddeleri ve bağlantıları okuyabiliyor; 4 tabloda insert/update/delete/truncate denemelerinin 15'i de `42501` ile reddediliyor |
+| 5.2 | Hasta B'nin listesindeki Z ilacı, hasta A'nın `check_drug_risk` sonucunu etkilemiyor (ne `same_ingredient` ne `risk_found`); yanıtta B'nin ürün adı veya kimliği yok. Pozitif kontrol: aynı çağrılar B için `same_ingredient` ve `risk_found` döndürüyor |
+| 5.3 | anon katalog tablolarını okuyamıyor |
+| 5.4 | Denemelerden sonra katalog verisi değişmemiş |
+
+### Yerel doğrulama (23 Kasım 2026, PGlite)
+
+| Çalıştırma | Sonuç |
+|---|---|
+| `dev` sırası: 001 → 002 → seed → `rls_scenarios` → `catalog_rls` | Geçti |
+| PR #37 sırası: 001 → 002 → 003 → seed → `rls_scenarios` → `catalog_rls` | Geçti |
+| Negatif: authenticated'a `products` insert yetkisi verildi | Beklendiği gibi **başarısız** (5.0b) |
+| Negatif: anon'a `ingredients` okuma yetkisi verildi | Beklendiği gibi **başarısız** (5.0c) |
+| Negatif: `products`'a yazma politikası eklendi | Beklendiği gibi **başarısız** (5.0f) |
+| Negatif: `check_drug_risk` aynı etken madde sorgusundan hasta filtresi kaldırıldı | Beklendiği gibi **başarısız** (5.2a) |
+| Negatif: `check_drug_risk` etkileşim sorgusundan hasta filtresi kaldırıldı | Beklendiği gibi **başarısız** (5.2c) |
+
+### Canlı doğrulama (`ilac-dev`, 23 Kasım 2026)
+
+1. SQL Editor'de `supabase/tests/catalog_rls.sql` dosyasının tamamını çalıştır; sonda **`KATALOG SENARYOLARI GEÇTİ`** görünmeli.
+2. Gerçek giriş yoluyla iki ayrı hesapla (`test-hasta`, `test-yakin`, bkz. `docs/19` §4) uygulamadan veya REST'ten: katalog okunuyor, `products`'a yazma `42501` ile reddediliyor, iki hesap birbirinin ilaç listesini görmüyor.
+3. Sonuçları aşağıdaki tabloya yaz, ekran görüntüsünü Issue #33'e ekle.
+
+| Kontrol | Sonuç | Not |
+|---|---|---|
+| `catalog_rls.sql` (SQL Editor) | **Geçti** | Metehan; çıktı `KATALOG SENARYOLARI GEÇTİ`, ekran görüntüsü Issue #33'te |
+| Hesap 1: katalog okuma | Geçti | Melike, gerçek giriş + publishable key (`docs/19` §5) |
+| Hesap 1: `products`'a yazma reddedildi | Geçti | `42501 permission denied` (`docs/19` §5) |
+| Hesap 2: hesap 1'in ilaç listesini göremiyor | Geçti | Bağlı olmayan yakın boş liste aldı (PR #37 açıklaması) |
