@@ -1,5 +1,14 @@
 # Kalıcı test hesabı — PR #27 (mobil giriş) canlı doğrulaması için
 
+> ## ⚠️ DÜZELTME (23 Kasım 2026)
+> Bu belge, 2 Kasım'da var olduğu sanılan bir Supabase projesi için yazılmıştı;
+> o proje mevcut değildi. Kalıcı test hesapları **23 Kasım 2026'da gerçekten
+> oluşturuldu** (`test-hasta@example.invalid`, `test-yakin@example.invalid`);
+> ayrıntı için bkz. `docs/19_SUPABASE_CANLI_KURULUM_2026-11-23.md` §4.
+>
+> Aşağıdaki gerekçe ve yöntem açıklaması (SQL ile `auth.users`'a elle satır
+> eklemenin neden güvenli olmadığı) geçerliliğini korur.
+
 ## Neden gerekli
 `supabase/tests/rls_scenarios.sql` (Metehan, PR #25) her şeyi tek bir transaction
 içinde yapıp sonunda `ROLLBACK` ediyor — bu bilinçli bir tasarım, veritabanında

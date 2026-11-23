@@ -1,0 +1,6 @@
+# Canlı Supabase'e giden testler ayrı etiketlidir.
+# Normal `flutter test` çalıştırmasında anahtar verilmediği için kendiliğinden
+# atlanırlar; CI'da ağ bağlantısı gerektirmezler.
+tags:
+  live:
+    description: Gerçek Supabase projesine bağlanan doğrulama testleri
