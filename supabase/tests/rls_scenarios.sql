@@ -28,7 +28,11 @@ insert into public.profiles (id, display_name) values
   ('00000000-0000-4000-8000-0000000000b1', 'TEST Hasta B'),
   ('00000000-0000-4000-8000-0000000000c1', 'TEST Yakın aktif'),
   ('00000000-0000-4000-8000-0000000000d1', 'TEST Yakın revoked'),
-  ('00000000-0000-4000-8000-0000000000e1', 'TEST Yakın pending');
+  ('00000000-0000-4000-8000-0000000000e1', 'TEST Yakın pending')
+-- 003_profile_on_signup.sql: auth.users'a insert, profiles satırını trigger ile
+-- zaten açıyor. Bu fixture trigger'dan ÖNCE yazıldığı için çakışıyordu; adı
+-- buradan sabitlemeye devam ediyoruz ama çakışmayı yutuyoruz.
+on conflict (id) do update set display_name = excluded.display_name;
 
 insert into public.caregiver_links (patient_id, caregiver_id, status) values
   ('00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000c1', 'active'),

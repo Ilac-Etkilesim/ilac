@@ -1,5 +1,23 @@
 # Sprint 2 — Dev Supabase kurulumu ve RLS doğrulaması (Metehan)
 
+> ## ⚠️ DÜZELTME (24 Kasım 2026)
+> Aşağıdaki **"Canlı doğrulama sonuçları (2 Kasım 2026, dev Supabase projesi)"**
+> bölümü o tarihte **gerçekten yapılmıştır**: Metehan dev projesini 2 Kasım'da
+> açmış, 001 ve 002'yi uygulamış ve `rls_scenarios.sql` çıktısını ekran
+> görüntüsüyle Issue #5'e yazmıştır (2 Kasım, 18:42).
+>
+> **Ancak o proje daha sonra silinmiştir** ve silinmeden önce ekibe bildirilmemiştir.
+> Bu nedenle 23 Kasım'da proje bulunamadı ve sıfırdan yeniden kuruldu.
+> Buradaki sonuçlar **artık var olmayan bir projeye** aittir; doğrulama kaydı
+> olarak geçerli, ancak bugünkü ortamı temsil etmez.
+>
+> Güncel ve çalışan ortam: **`docs/19_SUPABASE_CANLI_KURULUM_2026-11-23.md`**
+>
+> Ayrıca 4. maddedeki "seed 002'den önce ya da sonra çalıştırılabilir" ifadesi
+> eksikti; sıfırdan kurulumda `product_ingredients` boş kaldı, `demo_seed.sql`
+> bu yüzden güncellendi (bkz. docs/19 §3.3).
+
+
 **İlgili Issue'lar:** #5 (kurulum + canlı doğrulama), #15, #16, #17, #23
 **Teknik gözden geçiren:** Eray
 **Dosyalar:**

@@ -58,3 +58,20 @@ values
 on conflict do nothing;
 
 commit;
+
+-- =============================================================================
+-- product_ingredients bağlantıları (23 Kasım 2026, canlı kurulumda bulundu)
+-- -----------------------------------------------------------------------------
+-- 002_sprint2_rls_and_catalog.sql içindeki taşıma sorgusu YALNIZCA migration
+-- uygulanırken bir kez çalışır. Sıfırdan kurulan bir projede sıra
+-- 001 → 002 → seed olduğu için, seed'in eklediği ürünler o taşımayı kaçırıyor
+-- ve product_ingredients boş kalıyordu (gerçek kurulumda doğrulandı: 10 ürün,
+-- 0 bağlantı). Bu blok seed'i kendi kendine yeterli ve tekrar çalıştırılabilir
+-- yapar; docs/14'teki "seed 002'den önce ya da sonra çalıştırılabilir" ifadesi
+-- ancak bu blokla doğru olur.
+-- =============================================================================
+insert into public.product_ingredients (product_gtin, ingredient_id)
+select gtin, ingredient_id
+from public.products
+where ingredient_id is not null
+on conflict do nothing;
