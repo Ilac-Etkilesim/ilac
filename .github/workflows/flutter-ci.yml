@@ -29,3 +29,30 @@ jobs:
 
       - name: Testler
         run: flutter test
+
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Java 17 kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Flutter kur
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.1'
+          channel: 'stable'
+          cache: true
+
+      - name: Paketleri indir
+        run: flutter pub get
+
+      - name: Android debug APK derle
+        run: flutter build apk --debug
