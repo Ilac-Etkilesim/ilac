@@ -14,7 +14,7 @@ android {
         // flutter_local_notifications (zamanlanmış hatırlatmalar) eski Android
         // sürümlerinde java.time API'lerini kullanabilmek için desugaring ister;
         // bu satır olmadan Android derlemesi "checkDebugAarMetadata" adımında kırılır.
-        isCoreLibraryDesugaringEnabled = true
+        isCoreLibraryDesugaringEnabled = false
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
