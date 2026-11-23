@@ -116,7 +116,7 @@ Katalog hasta verisi değildir; giriş yapmış her kullanıcı okuyabilir. Yazm
 | Negatif: `check_drug_risk` aynı etken madde sorgusundan hasta filtresi kaldırıldı | Beklendiği gibi **başarısız** (5.2a) |
 | Negatif: `check_drug_risk` etkileşim sorgusundan hasta filtresi kaldırıldı | Beklendiği gibi **başarısız** (5.2c) |
 
-### Canlı doğrulama (`ilac-dev`) — yapılacak
+### Canlı doğrulama (`ilac-dev`, 23 Kasım 2026)
 
 1. SQL Editor'de `supabase/tests/catalog_rls.sql` dosyasının tamamını çalıştır; sonda **`KATALOG SENARYOLARI GEÇTİ`** görünmeli.
 2. Gerçek giriş yoluyla iki ayrı hesapla (`test-hasta`, `test-yakin`, bkz. `docs/19` §4) uygulamadan veya REST'ten: katalog okunuyor, `products`'a yazma `42501` ile reddediliyor, iki hesap birbirinin ilaç listesini görmüyor.
@@ -124,7 +124,7 @@ Katalog hasta verisi değildir; giriş yapmış her kullanıcı okuyabilir. Yazm
 
 | Kontrol | Sonuç | Not |
 |---|---|---|
-| `catalog_rls.sql` (SQL Editor) | | |
-| Hesap 1: katalog okuma | | |
-| Hesap 1: `products`'a yazma reddedildi | | |
-| Hesap 2: hesap 1'in ilaç listesini göremiyor | | |
+| `catalog_rls.sql` (SQL Editor) | **Geçti** | Metehan; çıktı `KATALOG SENARYOLARI GEÇTİ`, ekran görüntüsü Issue #33'te |
+| Hesap 1: katalog okuma | Geçti | Melike, gerçek giriş + publishable key (`docs/19` §5) |
+| Hesap 1: `products`'a yazma reddedildi | Geçti | `42501 permission denied` (`docs/19` §5) |
+| Hesap 2: hesap 1'in ilaç listesini göremiyor | Geçti | Bağlı olmayan yakın boş liste aldı (PR #37 açıklaması) |
