@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../core/gs1_parser.dart';
 import '../services/auth_service.dart';
+import '../services/catalog_service.dart';
 import 'caregiver_page.dart';
 import 'login_page.dart';
 import 'patient_page.dart';
+import 'scan_result_sheet.dart';
 import 'scanner_page.dart';
 
 const kBlue = Color(0xFF2469CE);
@@ -15,11 +16,13 @@ class MedicationApp extends StatelessWidget {
     super.key,
     this.home,
     this.authService = const AuthService(),
+    this.catalogService = const CatalogService(),
   });
 
   /// Test veya özel durumlar için başlangıç ekranı override'ı.
   final Widget? home;
   final AuthService authService;
+  final CatalogService catalogService;
 
   @override
   Widget build(BuildContext context) {
@@ -30,9 +33,9 @@ class MedicationApp extends StatelessWidget {
     // 4. Supabase yapılandırılmış ama oturum yoksa -> LoginPage().
     final Widget initialScreen = home ??
         (!AuthService.isConfigured
-            ? const HomeShell(isDemoMode: true)
+            ? HomeShell(isDemoMode: true, catalogService: catalogService)
             : (authService.isAuthenticated
-                ? const HomeShell(isDemoMode: false)
+                ? HomeShell(isDemoMode: false, catalogService: catalogService)
                 : const LoginPage()));
 
     return MaterialApp(
@@ -72,10 +75,12 @@ class HomeShell extends StatefulWidget {
     super.key,
     this.isDemoMode = true,
     this.authService = const AuthService(),
+    this.catalogService = const CatalogService(),
   });
 
   final bool isDemoMode;
   final AuthService authService;
+  final CatalogService catalogService;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -89,13 +94,15 @@ class _HomeShellState extends State<HomeShell> {
       MaterialPageRoute(builder: (_) => const ScannerPage()),
     );
     if (!mounted || code == null) return;
-    final gtin = extractGtin(code);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(seconds: 7),
-      content: Text(gtin == null
-          ? 'Kod okundu, fakat GTIN ayrıştırılamadı. Ürün doğrulanmadı.'
-          : 'GTIN: $gtin — Ürün eşleştirme ve tıbbi kontrol henüz bağlı değil.'),
-    ));
+
+    final lookupResult = await widget.catalogService.lookup(code);
+    if (!mounted) return;
+
+    await ScanResultSheet.show(
+      context,
+      result: lookupResult,
+      onRetry: lookupResult.isQueryFailed ? _scan : null,
+    );
   }
 
   Future<void> _handleSignOut() async {

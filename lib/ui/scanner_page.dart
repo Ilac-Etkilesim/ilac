@@ -49,7 +49,7 @@ class _ScannerPageState extends State<ScannerPage> {
               child: const SafeArea(
                 child: Text(
                   'İlaç kutusundaki karekod alanını kameraya tutun.\n'
-                  'Yalnızca GS1 DataMatrix/GTIN okuma denemesidir; ilaç güvenlik kontrolü yapılmaz.',
+                  'Yalnızca GS1 DataMatrix/GTIN okuma denemesidir; etkileşim ve klinik kontrol yapılmaz.',
                   style: TextStyle(fontSize: 17, color: Colors.white),
                   textAlign: TextAlign.center,
                 ),
