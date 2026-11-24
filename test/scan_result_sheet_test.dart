@@ -4,7 +4,7 @@ import 'package:ilac_yakinlik_takip/services/catalog_service.dart';
 import 'package:ilac_yakinlik_takip/ui/scan_result_sheet.dart';
 
 void main() {
-  Widget createTestWidget(CatalogLookupResult result, {VoidCallback? onRetry}) {
+  Widget createTestWidget(CatalogResult result, {VoidCallback? onRetry}) {
     return MaterialApp(
       home: Scaffold(
         body: ScanResultSheet(
@@ -17,13 +17,16 @@ void main() {
 
   group('ScanResultSheet Widget Testleri', () {
     testWidgets('1. Ürün bulunduğunda ürün adı ve etken madde(ler) ekranda gösterilir', (tester) async {
-      const product = CatalogProduct(
+      const result = CatalogResult(
+        status: CatalogStatus.bulundu,
         gtin: '99990000000008',
-        name: 'Örnek İlaç A',
-        activeIngredients: ['Asetilsalisilik Asit 100 mg', 'DEMO_ETKEN_A'],
+        productName: 'Örnek İlaç A',
+        ingredients: [
+          CatalogIngredient(name: 'Asetilsalisilik Asit 100 mg'),
+          CatalogIngredient(name: 'DEMO_ETKEN_A'),
+        ],
         isDemo: true,
       );
-      final result = CatalogLookupResult.found(product);
 
       await tester.pumpWidget(createTestWidget(result));
 
@@ -49,8 +52,35 @@ void main() {
       );
     });
 
-    testWidgets('2. "Katalogda bulunamadı" durumu farklı ve açık bir mesajla gösterilir', (tester) async {
-      final result = CatalogLookupResult.notFound(gtin: '99990000009999');
+    testWidgets('2. "degerlendirilmedi" durumu: ürün var ama etken madde yoksa açıkça gösterilir', (tester) async {
+      const result = CatalogResult(
+        status: CatalogStatus.degerlendirilmedi,
+        gtin: '99990000000015',
+        productName: 'Örnek İlaç B',
+        reason: 'Ürünün etken maddesi kayıtlı değil; kontrol tamamlanamadı.',
+        isDemo: true,
+      );
+
+      await tester.pumpWidget(createTestWidget(result));
+
+      // Ürün adı görünmeli
+      expect(find.byKey(const Key('scan_result_product_name')), findsOneWidget);
+      expect(find.text('Örnek İlaç B'), findsOneWidget);
+
+      // Etken madde kaydı yok kartı ve nedeni
+      expect(find.text('Etken Madde Kaydı Yok'), findsOneWidget);
+      expect(find.byKey(const Key('scan_result_not_evaluated_reason')), findsOneWidget);
+      expect(find.textContaining('kontrol tamamlanamadı'), findsOneWidget);
+
+      // Tıbbi değerlendirme yapılamaz uyarısı
+      expect(find.textContaining('etkileşim değerlendirmesi yapılamaz'), findsOneWidget);
+    });
+
+    testWidgets('3. "katalogdaYok" durumu: farklı ve açık bir mesajla gösterilir', (tester) async {
+      const result = CatalogResult(
+        status: CatalogStatus.katalogdaYok,
+        gtin: '99990000009999',
+      );
 
       await tester.pumpWidget(createTestWidget(result));
 
@@ -67,9 +97,11 @@ void main() {
       expect(find.textContaining('etkileşim kontrolü yapılamaz'), findsOneWidget);
     });
 
-    testWidgets('3. "Sorgulanamadı" durumu farklı ve açık bir mesajla gösterilir', (tester) async {
-      final result = CatalogLookupResult.queryFailed(
-        message: 'Karekod okunamadı veya sunucuya erişilemedi.',
+    testWidgets('4. "sorgulanamadi" durumu: farklı ve açık bir hata mesajı ile gösterilir', (tester) async {
+      const result = CatalogResult(
+        status: CatalogStatus.sorgulanamadi,
+        gtin: '',
+        reason: 'Sunucuya bağlanılamadı; katalog kontrolü tamamlanamadı.',
       );
 
       var retried = false;
@@ -81,7 +113,7 @@ void main() {
 
       // Hata mesajı
       expect(find.byKey(const Key('scan_result_failed_message')), findsOneWidget);
-      expect(find.text('Karekod okunamadı veya sunucuya erişilemedi.'), findsOneWidget);
+      expect(find.text('Sunucuya bağlanılamadı; katalog kontrolü tamamlanamadı.'), findsOneWidget);
 
       // Yeniden dene butonu
       expect(find.byKey(const Key('scan_result_retry_button')), findsOneWidget);
@@ -89,13 +121,13 @@ void main() {
       expect(retried, isTrue);
     });
 
-    testWidgets('4. Yaşlı kullanıcı için dokunma alanı en az 48 px kuralını karşılar', (tester) async {
-      const product = CatalogProduct(
+    testWidgets('5. Yaşlı kullanıcı için dokunma alanı en az 48 px kuralını karşılar (52 px)', (tester) async {
+      const result = CatalogResult(
+        status: CatalogStatus.bulundu,
         gtin: '99990000000008',
-        name: 'Örnek İlaç A',
-        activeIngredients: ['DEMO_ETKEN_A'],
+        productName: 'Örnek İlaç A',
+        ingredients: [CatalogIngredient(name: 'DEMO_ETKEN_A')],
       );
-      final result = CatalogLookupResult.found(product);
 
       await tester.pumpWidget(createTestWidget(result));
 
@@ -104,23 +136,34 @@ void main() {
 
       final renderBox = tester.renderObject<RenderBox>(closeButtonFinder);
       expect(renderBox.size.height, greaterThanOrEqualTo(48.0));
-      // Tasarımımızda 52 px olarak belirlendi:
       expect(renderBox.size.height, equals(52.0));
     });
 
-    testWidgets('5. KABUL KRİTERİ: Ekranda hiçbir yerde "güvenli", "doğrulandı" veya "uygun" ifadesi bulunmaz',
+    testWidgets('6. KABUL KRİTERİ: Ekranda hiçbir yerde "güvenli", "doğrulandı" veya "uygun" ifadesi bulunmaz',
         (tester) async {
-      // 3 durumu da test edelim:
+      // 4 durumu da test edelim:
       final scenarios = [
-        CatalogLookupResult.found(
-          const CatalogProduct(
-            gtin: '99990000000008',
-            name: 'Örnek İlaç A',
-            activeIngredients: ['DEMO_ETKEN_A'],
-          ),
+        const CatalogResult(
+          status: CatalogStatus.bulundu,
+          gtin: '99990000000008',
+          productName: 'Örnek İlaç A',
+          ingredients: [CatalogIngredient(name: 'DEMO_ETKEN_A')],
         ),
-        CatalogLookupResult.notFound(gtin: '99990000009999'),
-        CatalogLookupResult.queryFailed(),
+        const CatalogResult(
+          status: CatalogStatus.degerlendirilmedi,
+          gtin: '99990000000015',
+          productName: 'Örnek İlaç B',
+          reason: 'Ürünün etken maddesi kayıtlı değil; kontrol tamamlanamadı.',
+        ),
+        const CatalogResult(
+          status: CatalogStatus.katalogdaYok,
+          gtin: '99990000009999',
+        ),
+        const CatalogResult(
+          status: CatalogStatus.sorgulanamadi,
+          gtin: '',
+          reason: 'Karekod okunamadı.',
+        ),
       ];
 
       final forbiddenWords = ['güvenli', 'doğrulandı', 'uygun'];

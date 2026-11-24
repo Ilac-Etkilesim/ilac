@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/gs1_parser.dart';
 import '../services/auth_service.dart';
 import '../services/catalog_service.dart';
 import 'caregiver_page.dart';
@@ -95,13 +96,23 @@ class _HomeShellState extends State<HomeShell> {
     );
     if (!mounted || code == null) return;
 
-    final lookupResult = await widget.catalogService.lookup(code);
+    final gtin = extractGtin(code);
+    final CatalogResult lookupResult;
+    if (gtin == null) {
+      lookupResult = const CatalogResult(
+        status: CatalogStatus.sorgulanamadi,
+        gtin: '',
+        reason: 'Karekoddan standart barkod numarası (GTIN) ayrıştırılamadı. Kod biçimi geçersiz olabilir.',
+      );
+    } else {
+      lookupResult = await widget.catalogService.lookupGtin(gtin);
+    }
     if (!mounted) return;
 
     await ScanResultSheet.show(
       context,
       result: lookupResult,
-      onRetry: lookupResult.isQueryFailed ? _scan : null,
+      onRetry: lookupResult.status == CatalogStatus.sorgulanamadi ? _scan : null,
     );
   }
 

@@ -27,12 +27,11 @@ void main() {
               onPressed: () {
                 ScanResultSheet.show(
                   context,
-                  result: CatalogLookupResult.found(
-                    const CatalogProduct(
-                      gtin: '99990000000008',
-                      name: 'Örnek Ürün A',
-                      activeIngredients: ['DEMO_ETKEN_A'],
-                    ),
+                  result: const CatalogResult(
+                    status: CatalogStatus.bulundu,
+                    gtin: '99990000000008',
+                    productName: 'Örnek Ürün A',
+                    ingredients: [CatalogIngredient(name: 'DEMO_ETKEN_A')],
                   ),
                 );
               },

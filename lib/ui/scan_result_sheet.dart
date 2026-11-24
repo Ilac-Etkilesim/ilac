@@ -18,13 +18,13 @@ class ScanResultSheet extends StatelessWidget {
     this.onRetry,
   });
 
-  final CatalogLookupResult result;
+  final CatalogResult result;
   final VoidCallback? onRetry;
 
   /// Alt sayfayı modal olarak açan yardımcı fonksiyon.
   static Future<void> show(
     BuildContext context, {
-    required CatalogLookupResult result,
+    required CatalogResult result,
     VoidCallback? onRetry,
   }) {
     return showModalBottomSheet<void>(
@@ -64,16 +64,17 @@ class ScanResultSheet extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // Duruma göre içerik
+              // Duruma göre içerik (Dört durum: bulundu, degerlendirilmedi, katalogdaYok, sorgulanamadi)
               switch (result.status) {
-                CatalogResultStatus.found => _buildFoundContent(context),
-                CatalogResultStatus.notFound => _buildNotFoundContent(context),
-                CatalogResultStatus.queryFailed => _buildQueryFailedContent(context),
+                CatalogStatus.bulundu => _buildFoundContent(context),
+                CatalogStatus.degerlendirilmedi => _buildNotEvaluatedContent(context),
+                CatalogStatus.katalogdaYok => _buildNotFoundContent(context),
+                CatalogStatus.sorgulanamadi => _buildQueryFailedContent(context),
               },
 
               const SizedBox(height: 20),
 
-              // Kapat / Tamam Butonu (Minimum 52 px dokunma alanı)
+              // Kapat / Tamam Butonu (Minimum 52 px dokunma alanı - yaşlı dostu)
               SizedBox(
                 height: 52,
                 child: ElevatedButton(
@@ -94,7 +95,7 @@ class ScanResultSheet extends StatelessWidget {
               ),
 
               // Yeniden dene butonu (yalnızca sorgu başarısızsa ve callback varsa)
-              if (result.isQueryFailed && onRetry != null) ...[
+              if (result.status == CatalogStatus.sorgulanamadi && onRetry != null) ...[
                 const SizedBox(height: 12),
                 SizedBox(
                   height: 52,
@@ -127,13 +128,16 @@ class ScanResultSheet extends StatelessWidget {
 
   /// 1. Ürün katalogda bulundu ekranı
   Widget _buildFoundContent(BuildContext context) {
-    final product = result.product!;
+    final productName = result.productName ?? 'Kayıtlı Ürün';
+    final ingredientsText = result.ingredients.isNotEmpty
+        ? result.ingredients.map((i) => i.name).join(', ')
+        : 'Belirtilmedi';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Demo etiketi
-        if (product.isDemo)
+        if (result.isDemo)
           Align(
             alignment: Alignment.centerLeft,
             child: Container(
@@ -142,7 +146,7 @@ class ScanResultSheet extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.blueGrey.shade50,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.Border.all(color: Colors.blueGrey.shade300),
+                border: Border.all(color: Colors.blueGrey.shade300),
               ),
               child: const Text(
                 'DEMO VERİSİ · TEMSİLİ KAYIT',
@@ -157,7 +161,7 @@ class ScanResultSheet extends StatelessWidget {
 
         // Ürün Adı (Büyük ve okunaklı)
         Text(
-          product.name,
+          productName,
           key: const Key('scan_result_product_name'),
           style: const TextStyle(
             fontSize: 24,
@@ -195,7 +199,7 @@ class ScanResultSheet extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                product.ingredientsSummary,
+                ingredientsText,
                 key: const Key('scan_result_ingredients'),
                 style: const TextStyle(
                   fontSize: 18,
@@ -203,16 +207,29 @@ class ScanResultSheet extends StatelessWidget {
                   color: Color(0xFF1E293B),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Barkod (GTIN): ${product.gtin}',
-                key: const Key('scan_result_gtin'),
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey.shade700,
+              if (result.needsReview) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Etken madde bilgisi inceleme bekliyor.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.amber.shade900,
+                  ),
                 ),
-              ),
+              ],
+              if (result.gtin.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Barkod (GTIN): ${result.gtin}',
+                  key: const Key('scan_result_gtin'),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -234,7 +251,118 @@ class ScanResultSheet extends StatelessWidget {
     );
   }
 
-  /// 2. Katalogda bulunamadı ekranı
+  /// 2. Değerlendirilmedi ekranı (Ürün var ama etken madde kayıtlı değil)
+  Widget _buildNotEvaluatedContent(BuildContext context) {
+    final productName = result.productName ?? 'Kayıtlı Ürün';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Demo etiketi
+        if (result.isDemo)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blueGrey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blueGrey.shade300),
+              ),
+              child: const Text(
+                'DEMO VERİSİ · TEMSİLİ KAYIT',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.blueGrey,
+                ),
+              ),
+            ),
+          ),
+
+        // Ürün Adı
+        Text(
+          productName,
+          key: const Key('scan_result_product_name'),
+          style: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: kNavy,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Durum kartı
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFFDE68A)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.help_outline, color: kWarningAmber, size: 22),
+                  SizedBox(width: 8),
+                  Text(
+                    'Etken Madde Kaydı Yok',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: kNavy,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                result.reason ??
+                    'Ürünün etken madde bilgisi katalogda yer almadığından inceleme tamamlanamadı.',
+                key: const Key('scan_result_not_evaluated_reason'),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF92400E),
+                ),
+              ),
+              if (result.gtin.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Barkod (GTIN): ${result.gtin}',
+                  key: const Key('scan_result_gtin'),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF78350F),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Tıbbi Sınır Uyarısı
+        _buildMedicalNoticeBox(
+          title: 'Tıbbi Bilgilendirme',
+          message:
+              'Etken madde bilgisi bulunmayan ürünlerde etkileşim değerlendirmesi yapılamaz. '
+              'İlacınız hakkında bilgi almak için hekim veya eczacınıza danışınız.',
+          backgroundColor: kWarningBg,
+          borderColor: kWarningAmber,
+          textColor: const Color(0xFF78350F),
+          icon: Icons.warning_amber_rounded,
+        ),
+      ],
+    );
+  }
+
+  /// 3. Katalogda bulunamadı ekranı
   Widget _buildNotFoundContent(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -278,15 +406,15 @@ class ScanResultSheet extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              const Text(
                 'Okunan barkod numarası katalog kayıtlarında yer almıyor.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF92400E),
                 ),
               ),
-              if (result.gtin != null) ...[
+              if (result.gtin.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
                   'Barkod (GTIN): ${result.gtin}',
@@ -318,7 +446,7 @@ class ScanResultSheet extends StatelessWidget {
     );
   }
 
-  /// 3. Doğrulanamadı / Sorgulanamadı ekranı
+  /// 4. Doğrulanamadı / Sorgulanamadı ekranı
   Widget _buildQueryFailedContent(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -360,7 +488,7 @@ class ScanResultSheet extends StatelessWidget {
             border: Border.all(color: const Color(0xFFFECACA)),
           ),
           child: Text(
-            result.message ??
+            result.reason ??
                 'Karekod bilgisi okunamadı veya sunucuya erişilemedi. Lütfen barkodun net göründüğünden emin olun.',
             key: const Key('scan_result_failed_message'),
             style: const TextStyle(

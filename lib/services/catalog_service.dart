@@ -1,166 +1,299 @@
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../core/gs1_parser.dart';
 
-/// Katalogda yer alan ürün bilgisi.
-/// Sprint 0 / Sprint 3 demo veri modeli.
-class CatalogProduct {
-  const CatalogProduct({
-    required this.gtin,
+/// Katalog sorgusunun sonucu (Issue #31).
+///
+/// Durum isimleri sunucudaki `check_drug_risk()` ile bilinçli olarak hizalıdır
+/// (`product_not_found`, `not_evaluated`), böylece Sprint 4'te etkileşim
+/// kontrolü eklenirken aynı sözlük kullanılabilir.
+///
+/// **Tıbbi sınır:** Hiçbir durum "ilaç güvenli" anlamına gelmez.
+/// [katalogdaYok] ("bu kodu tanımıyoruz") ile [sorgulanamadi] ("soramadık")
+/// asla aynı duruma indirgenmemelidir.
+enum CatalogStatus {
+  /// Ürün ve en az bir etken madde katalogda bulundu.
+  bulundu,
+
+  /// GTIN katalogda kayıtlı değil. Ürünün var olmadığını kanıtlamaz.
+  katalogdaYok,
+
+  /// Ürün var ama etken maddesi kayıtlı değil; kontrol tamamlanamaz.
+  degerlendirilmedi,
+
+  /// Sorgu hiç yapılamadı: bağlantı yok, yetki yok veya kod biçimi geçersiz.
+  sorgulanamadi,
+}
+
+/// Katalogda bulunan tek bir etken madde.
+@immutable
+class CatalogIngredient {
+  const CatalogIngredient({
     required this.name,
-    required this.activeIngredients,
-    this.isDemo = true,
-    this.description,
+    this.needsReview = false,
   });
 
-  final String gtin;
+  /// Gösterilecek ad (`display_name`, yoksa `normalized_name`).
   final String name;
-  final List<String> activeIngredients;
-  final bool isDemo;
-  final String? description;
 
-  String get ingredientsSummary => activeIngredients.join(', ');
+  /// TİTCK kaynağında etken madde yerine kategori adı geçen kayıtlar için.
+  /// Bu kayıtlar doğrulanmış etken madde sayılmaz.
+  final bool needsReview;
 }
 
-/// Karekod / Barkod sorgulama sonuç durumu.
-enum CatalogResultStatus {
-  /// Ürün katalogda bulundu.
-  found,
-
-  /// GTIN ayrıştırıldı ancak katalogda kayıtlı değil.
-  notFound,
-
-  /// Karekod okunamadı, format tanınmadı veya teknik sorgu gerçekleştirilemedi.
-  queryFailed,
-}
-
-/// Barkod sorgulama neticesinde dönen veri paketi.
-class CatalogLookupResult {
-  const CatalogLookupResult._({
+/// Katalog sorgusunun sonucu.
+@immutable
+class CatalogResult {
+  const CatalogResult({
     required this.status,
-    this.product,
-    this.gtin,
-    this.rawCode,
-    this.message,
+    required this.gtin,
+    this.productName,
+    this.ingredients = const <CatalogIngredient>[],
+    this.isDemo = false,
+    this.reason,
   });
 
-  factory CatalogLookupResult.found(CatalogProduct product, {String? rawCode}) {
-    return CatalogLookupResult._(
-      status: CatalogResultStatus.found,
-      product: product,
-      gtin: product.gtin,
-      rawCode: rawCode,
-    );
+  final CatalogStatus status;
+  final String gtin;
+
+  /// Ürün adı; yalnızca [CatalogStatus.bulundu] ve
+  /// [CatalogStatus.degerlendirilmedi] durumlarında dolu olur.
+  final String? productName;
+
+  final List<CatalogIngredient> ingredients;
+
+  /// Kayıt demo/kurgusal veriden geliyorsa true. Arayüz bunu DEMO olarak
+  /// etiketlemek zorundadır.
+  final bool isDemo;
+
+  /// [CatalogStatus.sorgulanamadi] ve [CatalogStatus.degerlendirilmedi]
+  /// durumlarında nedenin kullanıcıya gösterilebilir açıklaması.
+  final String? reason;
+
+  /// Etken maddelerden en az biri inceleme bekliyorsa true.
+  bool get needsReview => ingredients.any((i) => i.needsReview);
+
+  /// Arayüzün doğrudan kullanabileceği varsayılan Türkçe metin.
+  ///
+  /// Bilinçli olarak hiçbir durumda "güvenli", "doğrulandı" veya "uygun"
+  /// ifadesi geçmez; etkileşim kontrolü bu sürümde bağlı değildir.
+  String get kullaniciMesaji {
+    switch (status) {
+      case CatalogStatus.bulundu:
+        if (needsReview) {
+          return 'Ürün katalogda bulundu, ancak etken madde bilgisi inceleme '
+              'bekliyor. İlaç kontrolü tamamlanmadı.';
+        }
+        return 'Ürün katalogda bulundu. Etkileşim kontrolü henüz bağlı değil.';
+      case CatalogStatus.katalogdaYok:
+        return 'Bu kod katalogda bulunamadı. Ürün doğrulanmadı.';
+      case CatalogStatus.degerlendirilmedi:
+        return reason ??
+            'Ürünün etken maddesi kayıtlı değil; kontrol tamamlanamadı.';
+      case CatalogStatus.sorgulanamadi:
+        return reason ?? 'Katalog sorgulanamadı. Kontrol tamamlanamadı.';
+    }
   }
-
-  factory CatalogLookupResult.notFound({required String gtin, String? rawCode}) {
-    return CatalogLookupResult._(
-      status: CatalogResultStatus.notFound,
-      gtin: gtin,
-      rawCode: rawCode,
-      message: 'Katalogda bulunamadı. Bu barkod numarası kayıtlarımızda yer almıyor.',
-    );
-  }
-
-  factory CatalogLookupResult.queryFailed({String? message, String? rawCode}) {
-    return CatalogLookupResult._(
-      status: CatalogResultStatus.queryFailed,
-      rawCode: rawCode,
-      message: message ?? 'Barkod bilgisi sorgulanamadı. Karekod okunamadı veya sunucuya erişilemedi.',
-    );
-  }
-
-  final CatalogResultStatus status;
-  final CatalogProduct? product;
-  final String? gtin;
-  final String? rawCode;
-  final String? message;
-
-  bool get isFound => status == CatalogResultStatus.found;
-  bool get isNotFound => status == CatalogResultStatus.notFound;
-  bool get isQueryFailed => status == CatalogResultStatus.queryFailed;
 }
 
-/// #S3-03 Katalog Servisi (Yerel Demo / Mock & İleride Supabase Entegrasyonu).
-class CatalogService {
-  const CatalogService({Map<String, CatalogProduct>? initialCatalog})
-      : _customCatalog = initialCatalog;
+/// Katalog satırlarını getiren kaynak. Testlerde sahte uygulama verilebilsin,
+/// üretimde Supabase kullanılsın diye ayrıştırılmıştır.
+abstract class CatalogSource {
+  /// `products` tablosundan tek satır; kayıt yoksa null.
+  Future<Map<String, dynamic>?> fetchProduct(String gtin);
 
-  final Map<String, CatalogProduct>? _customCatalog;
+  /// `product_ingredients` üzerinden bağlı `ingredients` satırları.
+  Future<List<Map<String, dynamic>>> fetchIngredients(String gtin);
+}
 
-  /// Kurgusal demo ürün kataloğu (data/demo_products.csv ile uyumlu).
-  static const Map<String, CatalogProduct> defaultDemoCatalog = {
-    '99990000000008': CatalogProduct(
-      gtin: '99990000000008',
-      name: 'Örnek Ürün A',
-      activeIngredients: ['DEMO_ETKEN_A', 'Asetilsalisilik Asit 100 mg'],
-      isDemo: true,
-    ),
-    '99990000000015': CatalogProduct(
-      gtin: '99990000000015',
-      name: 'Örnek Ürün B',
-      activeIngredients: ['DEMO_ETKEN_B', 'Metformin Hidroklorür 1000 mg'],
-      isDemo: true,
-    ),
-    '99990000000022': CatalogProduct(
-      gtin: '99990000000022',
-      name: 'Örnek Ürün C',
-      activeIngredients: ['DEMO_ETKEN_C', 'Amlodipin 5 mg'],
-      isDemo: true,
-    ),
-    '99990000000039': CatalogProduct(
-      gtin: '99990000000039',
-      name: 'Örnek Ürün D',
-      activeIngredients: ['DEMO_ETKEN_D', 'Atorvastatin 20 mg'],
-      isDemo: true,
-    ),
-    '99990000000046': CatalogProduct(
-      gtin: '99990000000046',
-      name: 'Örnek Ürün E',
-      activeIngredients: ['DEMO_ETKEN_E', 'Omeprazol 20 mg'],
-      isDemo: true,
-    ),
-    '99990000000053': CatalogProduct(
-      gtin: '99990000000053',
-      name: 'Örnek Ürün F',
-      activeIngredients: ['DEMO_ETKEN_F', 'Parasetamol 500 mg'],
-      isDemo: true,
-    ),
-    // Testlerde ve denemelerde sıkça kullanılan GS1 örnek GTIN'i
-    '01234567890128': CatalogProduct(
-      gtin: '01234567890128',
-      name: 'Örnek İlaç A',
-      activeIngredients: ['Parasetamol 500 mg'],
-      isDemo: true,
-    ),
-  };
+/// Supabase tablolarını doğrudan sorgulayan kaynak.
+///
+/// Ali'nin #30 sorgusu hazır olduğunda bu sınıf RPC çağrısına çevrilebilir;
+/// [CatalogService] ve arayüz tarafı değişmez.
+class SupabaseCatalogSource implements CatalogSource {
+  const SupabaseCatalogSource(this._client);
 
-  Map<String, CatalogProduct> get _catalog => _customCatalog ?? defaultDemoCatalog;
+  final SupabaseClient _client;
 
-  /// Kameradan veya okuyucudan gelen ham karekod dizgisini işler ve ürünü arar.
-  Future<CatalogLookupResult> lookup(String? rawCode) async {
-    if (rawCode == null || rawCode.trim().isEmpty) {
-      return CatalogLookupResult.queryFailed(
-        rawCode: rawCode,
-        message: 'Karekod bilgisi okunamadı. Lütfen kamerayı karekoda yaklaştırıp yeniden deneyin.',
-      );
-    }
-
-    final gtin = extractGtin(rawCode);
-    if (gtin == null) {
-      return CatalogLookupResult.queryFailed(
-        rawCode: rawCode,
-        message: 'Karekoddan standart barkod numarası (GTIN) ayrıştırılamadı. Kod bozuk veya tanınmayan formatta olabilir.',
-      );
-    }
-
-    return lookupByGtin(gtin, rawCode: rawCode);
+  @override
+  Future<Map<String, dynamic>?> fetchProduct(String gtin) async {
+    return await _client
+        .from('products')
+        .select('gtin, display_name, is_demo')
+        .eq('gtin', gtin)
+        .maybeSingle();
   }
 
-  /// Doğrudan 14 haneli GTIN ile katalog araması yapar.
-  Future<CatalogLookupResult> lookupByGtin(String gtin, {String? rawCode}) async {
-    final product = _catalog[gtin];
-    if (product != null) {
-      return CatalogLookupResult.found(product, rawCode: rawCode);
+  @override
+  Future<List<Map<String, dynamic>>> fetchIngredients(String gtin) async {
+    final rows = await _client
+        .from('product_ingredients')
+        .select('ingredients(display_name, normalized_name, needs_review)')
+        .eq('product_gtin', gtin);
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+}
+
+/// Okunan GTIN'i katalogla eşleştiren servis (Issue #31).
+///
+/// Supabase yapılandırılmamışsa uygulama DEMO modunda çalışmaya devam eder;
+/// bu durumda sorgu [CatalogStatus.sorgulanamadi] döner, istisna fırlatmaz.
+class CatalogService {
+  const CatalogService({CatalogSource? source}) : _sourceOverride = source;
+
+  final CatalogSource? _sourceOverride;
+
+  /// Supabase istemcisi başlatılmış mı?
+  static bool get isConfigured {
+    try {
+      Supabase.instance;
+      return true;
+    } catch (_) {
+      return false;
     }
-    return CatalogLookupResult.notFound(gtin: gtin, rawCode: rawCode);
+  }
+
+  /// Kullanılacak kaynak; Supabase başlatılmamışsa null.
+  CatalogSource? get source {
+    if (_sourceOverride != null) return _sourceOverride;
+    try {
+      return SupabaseCatalogSource(Supabase.instance.client);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// GTIN ile katalog sorgusu yapar. Hiçbir koşulda istisna fırlatmaz;
+  /// her hata [CatalogStatus.sorgulanamadi] olarak döner.
+  Future<CatalogResult> lookupGtin(String rawGtin) async {
+    final gtin = rawGtin.trim();
+
+    if (!isValidGtin14(gtin)) {
+      return CatalogResult(
+        status: CatalogStatus.sorgulanamadi,
+        gtin: gtin,
+        reason: 'Kod 14 haneli geçerli bir GTIN değil; katalog sorgulanmadı.',
+      );
+    }
+
+    final catalogSource = source;
+    if (catalogSource == null) {
+      return CatalogResult(
+        status: CatalogStatus.sorgulanamadi,
+        gtin: gtin,
+        reason: 'Katalog bağlantısı yapılandırılmadı (DEMO modu). '
+            'Kontrol tamamlanamadı.',
+      );
+    }
+
+    final Map<String, dynamic>? product;
+    try {
+      product = await catalogSource.fetchProduct(gtin);
+    } catch (e) {
+      debugPrint('Katalog ürün sorgusu başarısız: $e');
+      return CatalogResult(
+        status: CatalogStatus.sorgulanamadi,
+        gtin: gtin,
+        reason: mapCatalogError(e),
+      );
+    }
+
+    if (product == null) {
+      return CatalogResult(status: CatalogStatus.katalogdaYok, gtin: gtin);
+    }
+
+    final productName = (product['display_name'] as String?)?.trim();
+    final isDemo = product['is_demo'] == true;
+
+    final List<Map<String, dynamic>> rows;
+    try {
+      rows = await catalogSource.fetchIngredients(gtin);
+    } catch (e) {
+      debugPrint('Katalog etken madde sorgusu başarısız: $e');
+      return CatalogResult(
+        status: CatalogStatus.sorgulanamadi,
+        gtin: gtin,
+        productName: productName,
+        isDemo: isDemo,
+        reason: mapCatalogError(e),
+      );
+    }
+
+    final ingredients = parseIngredients(rows);
+    if (ingredients.isEmpty) {
+      return CatalogResult(
+        status: CatalogStatus.degerlendirilmedi,
+        gtin: gtin,
+        productName: productName,
+        isDemo: isDemo,
+        reason: 'Ürünün etken maddesi kayıtlı değil; kontrol tamamlanamadı.',
+      );
+    }
+
+    return CatalogResult(
+      status: CatalogStatus.bulundu,
+      gtin: gtin,
+      productName: productName,
+      ingredients: ingredients,
+      isDemo: isDemo,
+    );
+  }
+
+  /// `ingredients(...)` iç içe satırlarını ayrıştırır.
+  ///
+  /// Supabase iç içe ilişkiyi tek nesne veya liste olarak döndürebildiği için
+  /// iki biçim de desteklenir. Adı boş olan kayıtlar atlanır.
+  @visibleForTesting
+  static List<CatalogIngredient> parseIngredients(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final result = <CatalogIngredient>[];
+    final seen = <String>{};
+
+    for (final row in rows) {
+      final nested = row['ingredients'];
+      final items = nested is List ? nested : [nested];
+
+      for (final item in items) {
+        if (item is! Map) continue;
+        final display = (item['display_name'] as String?)?.trim();
+        final normalized = (item['normalized_name'] as String?)?.trim();
+        final name = (display != null && display.isNotEmpty)
+            ? display
+            : (normalized ?? '');
+        if (name.isEmpty) continue;
+        if (!seen.add(name.toLowerCase())) continue;
+
+        result.add(CatalogIngredient(
+          name: name,
+          needsReview: item['needs_review'] == true,
+        ));
+      }
+    }
+    return result;
+  }
+
+  /// Ağ/yetki hatalarını kullanıcıya gösterilebilir Türkçe metne çevirir.
+  /// Hiçbiri "ürün bulunamadı" anlamına gelmez — sorgu yapılamamıştır.
+  @visibleForTesting
+  static String mapCatalogError(Object error) {
+    final lower = error.toString().toLowerCase();
+
+    if (lower.contains('socketexception') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('network') ||
+        lower.contains('connection refused') ||
+        lower.contains('timeout')) {
+      return 'Sunucuya bağlanılamadı; katalog kontrolü tamamlanamadı. '
+          'İnternet bağlantınızı kontrol ediniz.';
+    }
+    if (lower.contains('jwt') ||
+        lower.contains('unauthorized') ||
+        lower.contains('permission denied') ||
+        lower.contains('row-level security')) {
+      return 'Katalog sorgusu için oturum gerekiyor; kontrol tamamlanamadı.';
+    }
+    return 'Katalog sorgulanamadı; kontrol tamamlanamadı.';
   }
 }
