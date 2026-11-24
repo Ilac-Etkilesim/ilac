@@ -1,3 +1,4 @@
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ilac_yakinlik_takip/core/gs1_parser.dart';
 
@@ -34,6 +35,23 @@ void main() {
       expect(normalizeManualGtin('0123456789012'), isNull);
       expect(normalizeManualGtin('012345678901280'), isNull);
       expect(normalizeManualGtin('0123456789012a'), isNull);
+    });
+  });
+
+  // Gerçek cihazda tespit edilen FNC1 hatası için regresyon testleri.
+  group('FNC1 / GS ayrıştırma testleri', () {
+    test('Başında FNC1 bulunan GTIN ayrıştırılır', () {
+      expect(
+        extractGtin('\u001D0199990000000008'),
+        '99990000000008',
+      );
+    });
+
+    test('Sembol tanımlayıcısı ve FNC1 birlikte ayrıştırılır', () {
+      expect(
+        extractGtin(']d2\u001D0199990000000008'),
+        '99990000000008',
+      );
     });
   });
 }
