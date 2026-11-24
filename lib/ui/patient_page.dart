@@ -4,7 +4,14 @@ import '../services/notification_service.dart';
 import 'medication_app.dart';
 
 class DemoDose {
-  DemoDose(this.id, this.label, this.dose, this.time, this.period, {this.taken = false});
+  DemoDose(
+    this.id,
+    this.label,
+    this.dose,
+    this.time,
+    this.period, {
+    this.taken = false,
+  });
   final int id;
   final String label;
   final String dose;
@@ -55,6 +62,64 @@ class _PatientPageState extends State<PatientPage> {
     await _doseStorage.saveTaken(DateTime.now(), takenIds);
   }
 
+  Future<void> _scheduleReminder(DemoDose dose) async {
+    setState(() => sending = true);
+
+    try {
+      final parts = dose.time.split(':');
+
+      final success = await NotificationService.instance
+          .scheduleDailyMedication(
+            id: 1000 + dose.id,
+            medicationName: dose.label,
+            hour: int.parse(parts[0]),
+            minute: int.parse(parts[1]),
+          );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '${dose.label} için günlük hatırlatma kuruldu. Saat: ${dose.time}. Tam saat izni yoksa gecikebilir.'
+                : 'Hatırlatma kurulamadı. Bildirim izinlerini kontrol edin.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Hatırlatma hatası: $e')));
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+
+  Future<void> _cancelReminder(DemoDose dose) async {
+    setState(() => sending = true);
+
+    try {
+      await NotificationService.instance.cancelMedication(1000 + dose.id);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${dose.label} hatırlatması iptal edildi.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('İptal hatası: $e')));
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+
   Future<void> _testNotification() async {
     setState(() => sending = true);
     try {
@@ -62,9 +127,11 @@ class _PatientPageState extends State<PatientPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(granted
-              ? 'Deneme bildirimi gönderildi.'
-              : 'Bildirim izni verilmedi, bildirim gösterilemedi. Telefon ayarlarından izni açın.'),
+          content: Text(
+            granted
+                ? 'Deneme bildirimi gönderildi.'
+                : 'Bildirim izni verilmedi, bildirim gösterilemedi. Telefon ayarlarından izni açın.',
+          ),
         ),
       );
     } catch (e) {
@@ -83,16 +150,24 @@ class _PatientPageState extends State<PatientPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 104),
       children: [
-        Text('Bugünün ilaçları', style: Theme.of(context).textTheme.headlineSmall),
+        Text(
+          'Bugünün ilaçları',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
         const SizedBox(height: 6),
-        const Text('Aşağıdaki kayıtlar örnektir, gerçek hasta verisi değildir.',
-            style: TextStyle(color: Color(0xFF526783), fontSize: 15)),
+        const Text(
+          'Aşağıdaki kayıtlar örnektir, gerçek hasta verisi değildir.',
+          style: TextStyle(color: Color(0xFF526783), fontSize: 15),
+        ),
         const SizedBox(height: 18),
         if (_loading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Center(
-              child: Text('Yükleniyor...', style: TextStyle(color: Color(0xFF526783))),
+              child: Text(
+                'Yükleniyor...',
+                style: TextStyle(color: Color(0xFF526783)),
+              ),
             ),
           ),
         Card(
@@ -103,59 +178,122 @@ class _PatientPageState extends State<PatientPage> {
                 const Icon(Icons.today_outlined, color: kBlue, size: 32),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Bugün $taken / ${doses.length} doz onaylandı',
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                  child: Text(
+                    'Bugün $taken / ${doses.length} doz onaylandı',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
         ),
-        ...['Sabah', 'Öğle', 'Akşam'].map((period) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 18, 0, 10),
-              child: Text(period, style: Theme.of(context).textTheme.titleLarge),
-            ),
-            ...doses.where((d) => d.period == period).map((dose) =>
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: dose.taken ? const Color(0xFFE2F5EB) : const Color(0xFFEAF2FD),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        width: 53, height: 53,
-                        child: Icon(dose.taken ? Icons.check_circle : Icons.medication,
-                            color: dose.taken ? const Color(0xFF14794D) : kBlue, size: 30),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(dose.label, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                          Text('${dose.time} · ${dose.dose}', style: const TextStyle(fontSize: 14)),
-                          Text(dose.taken ? 'Alındı olarak işaretlendi (demo)' : 'Onay bekliyor (demo)',
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF526783))),
-                        ]),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 50,
-                        child: FilledButton.tonal(
-                          onPressed: () => _toggleDose(dose),
-                          child: Text(dose.taken ? 'Geri al' : 'İçtim'),
-                        ),
-                      ),
-                    ],
-                  ),
+        ...['Sabah', 'Öğle', 'Akşam'].map(
+          (period) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 18, 0, 10),
+                child: Text(
+                  period,
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
-            ),
-          ],
-        )),
+              ...doses
+                  .where((d) => d.period == period)
+                  .map(
+                    (dose) => Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: dose.taken
+                                    ? const Color(0xFFE2F5EB)
+                                    : const Color(0xFFEAF2FD),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              width: 53,
+                              height: 53,
+                              child: Icon(
+                                dose.taken
+                                    ? Icons.check_circle
+                                    : Icons.medication,
+                                color: dose.taken
+                                    ? const Color(0xFF14794D)
+                                    : kBlue,
+                                size: 30,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    dose.label,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${dose.time} · ${dose.dose}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  Text(
+                                    dose.taken
+                                        ? 'Alındı olarak işaretlendi (demo)'
+                                        : 'Onay bekliyor (demo)',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF526783),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            PopupMenuButton<String>(
+                              enabled: !sending,
+                              icon: const Icon(Icons.notifications_outlined),
+                              tooltip: 'İlaç hatırlatması',
+                              onSelected: (value) async {
+                                if (value == 'schedule') {
+                                  await _scheduleReminder(dose);
+                                } else if (value == 'cancel') {
+                                  await _cancelReminder(dose);
+                                }
+                              },
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(
+                                  value: 'schedule',
+                                  child: Text('Hatırlatma kur'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'cancel',
+                                  child: Text('Hatırlatmayı iptal et'),
+                                ),
+                              ],
+                            ),
+                            SizedBox(
+                              height: 50,
+                              child: FilledButton.tonal(
+                                onPressed: () => _toggleDose(dose),
+                                child: Text(dose.taken ? 'Geri al' : 'İçtim'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
         const SizedBox(height: 6),
         OutlinedButton.icon(
           onPressed: sending ? null : _testNotification,
@@ -163,8 +301,10 @@ class _PatientPageState extends State<PatientPage> {
           label: const Text('Telefonuma deneme bildirimi gönder'),
         ),
         const SizedBox(height: 12),
-        const Text('Not: Doz onayları yalnızca bu cihazda tutulur, gerçek kayıt/senkronizasyon ve yakına bildirim yoktur.',
-            style: TextStyle(color: Color(0xFF526783), fontSize: 13)),
+        const Text(
+          'Not: Doz onayları yalnızca bu cihazda tutulur, gerçek kayıt/senkronizasyon ve yakına bildirim yoktur.',
+          style: TextStyle(color: Color(0xFF526783), fontSize: 13),
+        ),
       ],
     );
   }
