@@ -1,0 +1,45 @@
+{
+  "project": "İlaç Kullanım ve Yakınlık Takip Sistemi",
+  "stage": "Sprint 0 (technical spike)",
+  "status": "starter_code_not_device_verified",
+  "mobile_framework": {
+    "candidate": "Flutter",
+    "decision": "pending 1-week spike"
+  },
+  "backend": "Supabase PostgreSQL (draft)",
+  "meeting_minutes_weekly": 30,
+  "hours_per_person_including_meeting": 3,
+  "leader_no_development": true,
+  "leader_rotation": [
+    "Melike",
+    "Metehan",
+    "Gizem",
+    "Ali",
+    "Afra",
+    "Ahmet",
+    "Merve",
+    "Eray"
+  ],
+  "last_week_leader": "Eray",
+  "current_week_leader": "Melike",
+  "caregiver_alerts": [
+    "major_interaction",
+    "unconfirmed_dose"
+  ],
+  "unconfirmed_dose_threshold_minutes": {
+    "proposed": 90,
+    "approved": false
+  },
+  "data_sources_available": false,
+  "device": "Android physical device available",
+  "sprint0_owners": {
+    "Eray": "repository and PR workflow",
+    "Metehan": "supabase database and RLS review",
+    "Gizem": "physical DataMatrix scan proof",
+    "Ali": "synthetic fixtures/source licensing",
+    "Afra": "Flutter UI and phone run",
+    "Ahmet": "caregiver auth and test scenarios",
+    "Merve": "local notification proof",
+    "Melike": "coordination, technical review orchestration, handover"
+  }
+}
